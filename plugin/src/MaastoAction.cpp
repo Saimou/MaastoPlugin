@@ -184,8 +184,11 @@ namespace MaastoPlugin
         if ( idx < 0 )
             return;
 
-        // Aseta scalar field aktiiviseksi ja kytke SF-väritys päälle
+        // Aseta scalar field aktiiviseksi ja kytke SF-väritys päälle.
+        // showColors(false) tarvitaan jotta Properties-ikkunan Colors vaihtuu
+        // RGB:stä Scalar field -tilaan (sama mitä Properties-paneeli tekee)
         m_cloud->setCurrentDisplayedScalarField( idx );
+        m_cloud->showColors( false );
         m_cloud->showSF( true );
         m_cloud->prepareDisplayForRefresh();
 
