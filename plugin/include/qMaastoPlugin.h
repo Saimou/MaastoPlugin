@@ -2,6 +2,8 @@
 
 #include "ccStdPluginInterface.h"
 
+namespace MaastoPlugin { class MaastoDialog; }
+
 class qMaastoPlugin : public QObject, public ccStdPluginInterface
 {
     Q_OBJECT
@@ -18,5 +20,6 @@ public:
     QList<QAction *> getActions() override;
 
 private:
-    QAction *m_action;
+    QAction                    *m_action;
+    MaastoPlugin::MaastoDialog *m_dialog;
 };

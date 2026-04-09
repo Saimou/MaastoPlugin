@@ -5,35 +5,32 @@
 #include "ccPointCloud.h"
 
 #include <QMainWindow>
-#include <QDialog>
 #include <QVBoxLayout>
 #include <QLabel>
-#include <QComboBox>
-#include <QListWidget>
 #include <QSet>
 #include <QStringList>
 #include <algorithm>
 
 namespace MaastoPlugin
 {
-    // Hakee scalar-kenttien nimet pistepilveltä aakkosjärjestyksessä.
-    // Palauttaa tyhjän listan jos pilveä ei ole.
-    static QStringList getScalarFieldNames( ccPointCloud *cloud )
+    // ----------------------------------------------------------------
+    // Apufunktiot
+    // ----------------------------------------------------------------
+
+    QStringList getScalarFieldNames( ccPointCloud *cloud )
     {
         QStringList names;
         if ( cloud == nullptr )
             return names;
 
         for ( unsigned i = 0; i < cloud->getNumberOfScalarFields(); ++i )
-        {
             names << QString( cloud->getScalarFieldName( i ) );
-        }
+
         names.sort( Qt::CaseInsensitive );
         return names;
     }
 
-    // Hakee uniikit arvot scalar-kentästä ja palauttaa ne lajiteltuna.
-    static QStringList getScalarFieldValues( ccPointCloud *cloud, const QString &fieldName )
+    QStringList getScalarFieldValues( ccPointCloud *cloud, const QString &fieldName )
     {
         QStringList result;
         if ( cloud == nullptr || fieldName.isEmpty() )
@@ -47,18 +44,13 @@ namespace MaastoPlugin
         if ( sf == nullptr )
             return result;
 
-        // Kerää uniikit arvot
         QSet<float> uniqueValues;
         for ( std::size_t i = 0; i < sf->currentSize(); ++i )
-        {
             uniqueValues.insert( static_cast<float>( sf->getValue( i ) ) );
-        }
 
-        // Lajittele numerojärjestyksessä
         QList<float> sorted = uniqueValues.values();
         std::sort( sorted.begin(), sorted.end() );
 
-        // Muunna merkkijonoiksi — kokonaisluku jos arvo on tasan int
         for ( float val : sorted )
         {
             if ( val == static_cast<float>( static_cast<int>( val ) ) )
@@ -70,70 +62,113 @@ namespace MaastoPlugin
         return result;
     }
 
-    void performAction( ccMainAppInterface *appInterface )
+    // ----------------------------------------------------------------
+    // MaastoDialog
+    // ----------------------------------------------------------------
+
+    MaastoDialog::MaastoDialog( ccMainAppInterface *appInterface, QWidget *parent )
+        : QDialog( parent )
+        , m_appInterface( appInterface )
+        , m_cloud( nullptr )
+        , m_comboBox( nullptr )
+        , m_listWidget( nullptr )
     {
-        if ( appInterface == nullptr )
+        setWindowTitle( "MaastoPlugin" );
+        setMinimumWidth( 320 );
+        // Ei-modaali: käyttäjä voi käyttää CC:tä dialogin ollessa auki
+        setWindowFlags( windowFlags() | Qt::Window );
+
+        QVBoxLayout *layout = new QVBoxLayout( this );
+
+        QLabel *sfLabel = new QLabel( "Scalar field:", this );
+        layout->addWidget( sfLabel );
+
+        m_comboBox = new QComboBox( this );
+        layout->addWidget( m_comboBox );
+
+        QLabel *valuesLabel = new QLabel( "Arvot:", this );
+        layout->addWidget( valuesLabel );
+
+        m_listWidget = new QListWidget( this );
+        m_listWidget->setMinimumHeight( 150 );
+        layout->addWidget( m_listWidget );
+
+        // Päivitä arvolista kun combobox muuttuu
+        connect( m_comboBox, &QComboBox::currentTextChanged,
+            [this]( const QString &fieldName )
+            {
+                populateValueList( fieldName );
+            } );
+    }
+
+    void MaastoDialog::updateCloud( ccPointCloud *cloud )
+    {
+        // Tallenna nykyinen valinta ennen päivitystä
+        QString currentField = m_comboBox->currentText();
+
+        m_cloud = cloud;
+
+        // Päivitä combobox — säilytä valinta jos mahdollista
+        populateComboBox( currentField );
+    }
+
+    void MaastoDialog::populateComboBox( const QString &keepField )
+    {
+        // Estetään turhat currentTextChanged-signaalit päivityksen aikana
+        m_comboBox->blockSignals( true );
+        m_comboBox->clear();
+
+        QStringList names = getScalarFieldNames( m_cloud );
+        m_comboBox->addItems( names );
+        m_comboBox->blockSignals( false );
+
+        if ( names.isEmpty() )
         {
-            Q_ASSERT( false );
+            m_listWidget->clear();
             return;
         }
 
-        // Hae valittu pistepilvi (jos on)
-        ccPointCloud *cloud = nullptr;
-        const ccHObject::Container &selected = appInterface->getSelectedEntities();
-        if ( !selected.empty() )
+        // Yritä säilyttää edellinen valinta
+        int keepIdx = names.indexOf( keepField );
+        if ( keepIdx >= 0 )
         {
-            cloud = ccHObjectCaster::ToPointCloud( selected[0] );
+            m_comboBox->setCurrentIndex( keepIdx );
+        }
+        else
+        {
+            // Oletusvalinta: Classification jos löytyy, muuten ensimmäinen
+            int classIdx = names.indexOf(
+                QRegularExpression( "Classification",
+                                    QRegularExpression::CaseInsensitiveOption ) );
+            m_comboBox->setCurrentIndex( classIdx >= 0 ? classIdx : 0 );
         }
 
-        // Dialogi
-        QDialog dialog( static_cast<QWidget*>( appInterface->getMainWindow() ) );
-        dialog.setWindowTitle( "MaastoPlugin" );
-        dialog.setMinimumWidth( 320 );
-
-        QVBoxLayout *layout = new QVBoxLayout( &dialog );
-
-        // --- Scalar field -otsikko + combobox ---
-        QLabel *sfLabel = new QLabel( "Scalar field:", &dialog );
-        layout->addWidget( sfLabel );
-
-        QComboBox *comboBox = new QComboBox( &dialog );
-        layout->addWidget( comboBox );
-
-        // --- Arvolista ---
-        QLabel *valuesLabel = new QLabel( "Arvot:", &dialog );
-        layout->addWidget( valuesLabel );
-
-        QListWidget *listWidget = new QListWidget( &dialog );
-        listWidget->setMinimumHeight( 150 );
-        layout->addWidget( listWidget );
-
-        // --- Täytä combobox ---
-        QStringList sfNames = getScalarFieldNames( cloud );
-        comboBox->addItems( sfNames );
-
-        // Aseta oletusvalinta: Classification jos löytyy, muuten ensimmäinen
-        if ( !sfNames.isEmpty() )
-        {
-            int classIdx = sfNames.indexOf( QRegularExpression(
-                "Classification", QRegularExpression::CaseInsensitiveOption ) );
-            if ( classIdx >= 0 )
-                comboBox->setCurrentIndex( classIdx );
-            else
-                comboBox->setCurrentIndex( 0 );
-
-            // Täytä lista oletusvalinnalla
-            listWidget->addItems( getScalarFieldValues( cloud, comboBox->currentText() ) );
-        }
-
-        // --- Päivitä lista kun combobox muuttuu ---
-        QObject::connect( comboBox, &QComboBox::currentTextChanged,
-            [&]( const QString &fieldName )
-            {
-                listWidget->clear();
-                listWidget->addItems( getScalarFieldValues( cloud, fieldName ) );
-            } );
-
-        dialog.exec();
+        populateValueList( m_comboBox->currentText() );
     }
-}
+
+    void MaastoDialog::populateValueList( const QString &fieldName )
+    {
+        m_listWidget->clear();
+        m_listWidget->addItems( getScalarFieldValues( m_cloud, fieldName ) );
+    }
+
+    // ----------------------------------------------------------------
+    // openDialog — avaa tai nostaa etualalle
+    // ----------------------------------------------------------------
+
+    MaastoDialog *openDialog( ccMainAppInterface *appInterface, ccPointCloud *cloud )
+    {
+        MaastoDialog *dialog = new MaastoDialog(
+            appInterface,
+            static_cast<QWidget*>( appInterface->getMainWindow() )
+        );
+
+        dialog->updateCloud( cloud );
+        dialog->show();
+        dialog->raise();
+        dialog->activateWindow();
+
+        return dialog;
+    }
+
+} // namespace MaastoPlugin
