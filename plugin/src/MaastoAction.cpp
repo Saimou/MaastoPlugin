@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QSet>
 #include <QStringList>
+#include <QTimer>
 #include <algorithm>
 
 namespace MaastoPlugin
@@ -103,11 +104,15 @@ namespace MaastoPlugin
                 populateValueList( fieldName );
             } );
 
-        // Aseta värjäys kun colorComboBox muuttuu
+        // Aseta värjäys kun colorComboBox muuttuu — lykätään event loopin kautta
+        // jotta CC:n redraw ei tapahdu signaalikäsittelyn kesken (jumiutuminen)
         connect( m_colorComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
             {
-                applyColorField( fieldName );
+                QTimer::singleShot( 0, this, [this, fieldName]()
+                {
+                    applyColorField( fieldName );
+                } );
             } );
     }
 
@@ -157,7 +162,13 @@ namespace MaastoPlugin
             populateValueList( comboBox->currentText() );
 
         if ( comboBox == m_colorComboBox )
-            applyColorField( comboBox->currentText() );
+        {
+            const QString fieldName = comboBox->currentText();
+            QTimer::singleShot( 0, this, [this, fieldName]()
+            {
+                applyColorField( fieldName );
+            } );
+        }
     }
 
     void MaastoDialog::populateValueList( const QString &fieldName )
