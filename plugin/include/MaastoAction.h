@@ -45,6 +45,9 @@ namespace MaastoPlugin
         QComboBox          *m_colorComboBox;
 
         QListWidget        *m_listWidget;
+
+        // Estää updateCloud()-silmukan kun CC triggeroi onNewSelection() updateUI():n jälkeen
+        bool                m_updatingCloud;
     };
 
     // Avaa dialogin tai nostaa sen etualalle jos jo auki.

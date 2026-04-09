@@ -9,7 +9,6 @@
 #include <QLabel>
 #include <QSet>
 #include <QStringList>
-#include <QTimer>
 #include <algorithm>
 
 namespace MaastoPlugin
@@ -74,6 +73,7 @@ namespace MaastoPlugin
         , m_valuesComboBox( nullptr )
         , m_colorComboBox( nullptr )
         , m_listWidget( nullptr )
+        , m_updatingCloud( false )
     {
         setWindowTitle( "MaastoPlugin" );
         setMinimumWidth( 320 );
@@ -104,20 +104,22 @@ namespace MaastoPlugin
                 populateValueList( fieldName );
             } );
 
-        // Aseta värjäys kun colorComboBox muuttuu — lykätään event loopin kautta
-        // jotta CC:n redraw ei tapahdu signaalikäsittelyn kesken (jumiutuminen)
+        // Aseta värjäys kun colorComboBox muuttuu
         connect( m_colorComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
             {
-                QTimer::singleShot( 0, this, [this, fieldName]()
-                {
-                    applyColorField( fieldName );
-                } );
+                applyColorField( fieldName );
             } );
     }
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )
     {
+        // Estä uudelleensyöttö: CC saattaa triggeröidä onNewSelection()
+        // updateUI():n seurauksena, mikä kutsuisi tätä uudelleen
+        if ( m_updatingCloud )
+            return;
+        m_updatingCloud = true;
+
         QString keepValues = m_valuesComboBox->currentText();
         QString keepColor  = m_colorComboBox->currentText();
 
@@ -125,6 +127,8 @@ namespace MaastoPlugin
 
         populateComboBox( m_valuesComboBox, keepValues );
         populateComboBox( m_colorComboBox,  keepColor  );
+
+        m_updatingCloud = false;
     }
 
     void MaastoDialog::populateComboBox( QComboBox *comboBox, const QString &keepField )
@@ -162,13 +166,7 @@ namespace MaastoPlugin
             populateValueList( comboBox->currentText() );
 
         if ( comboBox == m_colorComboBox )
-        {
-            const QString fieldName = comboBox->currentText();
-            QTimer::singleShot( 0, this, [this, fieldName]()
-            {
-                applyColorField( fieldName );
-            } );
-        }
+            applyColorField( comboBox->currentText() );
     }
 
     void MaastoDialog::populateValueList( const QString &fieldName )
@@ -191,9 +189,9 @@ namespace MaastoPlugin
         m_cloud->showSF( true );
         m_cloud->prepareDisplayForRefresh();
 
-        // Päivitä CC:n properties-paneeli ja 3D-näkymä
-        m_appInterface->updateUI();
-        m_appInterface->redrawAll();
+        // Päivitä vain 3D-näkymä — updateUI() poistettu koska se triggeroi
+        // onNewSelection() → updateCloud() → applyColorField() -silmukan
+        m_appInterface->refreshAll();
     }
 
     // ----------------------------------------------------------------
