@@ -67,6 +67,9 @@ jobs:
 
   # ─────────────────────────────────────────────
   # Windows build → QMAASTO_PLUGIN.dll
+  # Qt 5.15.2 msvc2019_64 — täsmää virallisen
+  # CloudCompare Windows-installerin kanssa
+  # (MSVC 1916, Qt 5.15.2)
   # ─────────────────────────────────────────────
   windows-build:
     name: Windows (MSVC)
@@ -86,17 +89,31 @@ jobs:
           submodules: recursive
           path: CloudCompare
 
-      - name: Install dependencies (conda)
+      - name: Install Qt 5.15.2 (msvc2019_64)
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: '5.15.2'
+          arch: 'win64_msvc2019_64'
+          cache: true
+
+      - name: Install other dependencies (conda)
         uses: conda-incubator/setup-miniconda@v3
         with:
           architecture: x64
-          activate-environment: CloudCompareDev
+          activate-environment: CloudCompareDeps
           auto-activate-base: false
-          environment-file: CloudCompare/.ci/conda-win.yml
           mamba-version: "*"
+          channels: conda-forge
+          channel-priority: strict
+
+      - name: Install eigen and zlib via conda
+        shell: bash -l {0}
+        run: mamba install -y eigen zlib laszip
 
       - name: Configure MSVC
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       - name: Set MSVC as compiler
         run: |
@@ -116,15 +133,17 @@ jobs:
             -S CloudCompare \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$CONDA_LIB_DIR" \
+            -DCMAKE_PREFIX_PATH="$Qt5_DIR;$CONDA_LIB_DIR" \
             -DEIGEN_ROOT_DIR="$EIGEN_ROOT_DIR" \
             -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
             -DPLUGIN_IO_QCORE=ON
 
       - name: Build
+        shell: bash -l {0}
         run: cmake --build CloudCompare/build --parallel
 
       - name: Install
+        shell: bash -l {0}
         run: cmake --install CloudCompare/build --prefix install-output
 
       - name: Find plugin .dll
