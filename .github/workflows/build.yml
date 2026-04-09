@@ -32,7 +32,7 @@ jobs:
             cmake ninja-build \
             qtbase5-dev qttools5-dev qttools5-dev-tools \
             libqt5svg5-dev libqt5opengl5-dev libqt5websockets5-dev \
-            libeigen3-dev libjsoncpp-dev
+            libeigen3-dev libjsoncpp-dev liblaszip-dev
 
       - name: Copy plugin into CloudCompare sources
         run: cp -r MaastoPlugin/plugin CloudCompare/plugins/private/qMaastoPlugin
@@ -47,7 +47,8 @@ jobs:
             -DEIGEN_ROOT_DIR=/usr/include/eigen3 \
             -DJSON_ROOT_DIR=/usr/include/jsoncpp \
             -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
-            -DPLUGIN_IO_QCORE=ON
+            -DPLUGIN_IO_QCORE=ON \
+            -DPLUGIN_IO_QLAS=ON
 
       - name: Build
         run: cmake --build CloudCompare/build --parallel
@@ -106,7 +107,7 @@ jobs:
           channels: conda-forge
           channel-priority: strict
 
-      - name: Install eigen and zlib via conda
+      - name: Install eigen, zlib and laszip via conda
         shell: bash -l {0}
         run: mamba install -y eigen zlib laszip
 
@@ -136,7 +137,8 @@ jobs:
             -DCMAKE_PREFIX_PATH="$Qt5_DIR;$CONDA_LIB_DIR" \
             -DEIGEN_ROOT_DIR="$EIGEN_ROOT_DIR" \
             -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
-            -DPLUGIN_IO_QCORE=ON
+            -DPLUGIN_IO_QCORE=ON \
+            -DPLUGIN_IO_QLAS=ON
 
       - name: Build
         shell: bash -l {0}
