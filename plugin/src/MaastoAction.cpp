@@ -2,6 +2,7 @@
 
 #include "ccMainAppInterface.h"
 
+#include <QMainWindow>
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QLabel>
@@ -18,7 +19,7 @@ namespace MaastoPlugin
         }
 
         // Avaa dialogi-ikkuna
-        QDialog dialog( appInterface->getMainWindow() );
+        QDialog dialog( static_cast<QWidget*>( appInterface->getMainWindow() ) );
         dialog.setWindowTitle( "MaastoPlugin" );
         dialog.setMinimumWidth( 300 );
 
