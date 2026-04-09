@@ -192,8 +192,12 @@ namespace MaastoPlugin
         m_cloud->showSF( true );
         m_cloud->prepareDisplayForRefresh();
 
-        // Päivitä vain 3D-näkymä — updateUI() poistettu koska se triggeroi
-        // onNewSelection() → updateCloud() → applyColorField() -silmukan
+        // updateUI() päivittää Properties-paneelin reaaliajassa.
+        // m_updatingCloud-lippu estää sen triggeröimän onNewSelection()-silmukan.
+        m_updatingCloud = true;
+        m_appInterface->updateUI();
+        m_updatingCloud = false;
+
         m_appInterface->refreshAll();
     }
 

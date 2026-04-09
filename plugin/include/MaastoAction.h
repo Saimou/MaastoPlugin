@@ -28,6 +28,9 @@ namespace MaastoPlugin
         // Säilyttää combobox-valinnat jos samat kentät löytyvät uudesta pilvestä.
         void updateCloud( ccPointCloud *cloud );
 
+        // Palauttaa true jos päivitys on kesken — estää onNewSelection()-silmukan
+        bool isUpdatingCloud() const { return m_updatingCloud; }
+
     private:
         void populateComboBox( QComboBox *comboBox, const QString &keepField = QString() );
         void populateValueList( const QString &fieldName );

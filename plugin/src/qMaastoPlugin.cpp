@@ -24,6 +24,11 @@ void qMaastoPlugin::onNewSelection( const ccHObject::Container &selectedEntities
     if ( m_dialog == nullptr )
         return;
 
+    // Estä silmukka: applyColorField() asettaa m_updatingCloud=true ennen
+    // updateUI()-kutsua joka triggeroi tämän — ohitetaan silloin päivitys
+    if ( m_dialog->isUpdatingCloud() )
+        return;
+
     ccPointCloud *cloud = nullptr;
     if ( !selectedEntities.empty() )
         cloud = ccHObjectCaster::ToPointCloud( selectedEntities[0] );
@@ -57,6 +62,10 @@ QList<QAction *> qMaastoPlugin::getActions()
 
             // Avaa uusi dialogi
             m_dialog = MaastoPlugin::openDialog( m_app, cloud );
+
+            // WA_DeleteOnClose: dialogi tuhotaan (ei vain piilotetaan) kun suljetaan
+            // → destroyed-signaali laukeaa oikein → m_dialog nollautuu
+            m_dialog->setAttribute( Qt::WA_DeleteOnClose );
 
             // Nollaa pointteri kun dialogi suljetaan
             connect( m_dialog, &QObject::destroyed, this, [this]()
