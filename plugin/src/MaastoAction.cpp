@@ -70,61 +70,71 @@ namespace MaastoPlugin
         : QDialog( parent )
         , m_appInterface( appInterface )
         , m_cloud( nullptr )
-        , m_comboBox( nullptr )
+        , m_valuesComboBox( nullptr )
+        , m_colorComboBox( nullptr )
         , m_listWidget( nullptr )
     {
         setWindowTitle( "MaastoPlugin" );
         setMinimumWidth( 320 );
-        // Ei-modaali: käyttäjä voi käyttää CC:tä dialogin ollessa auki
         setWindowFlags( windowFlags() | Qt::Window );
 
         QVBoxLayout *layout = new QVBoxLayout( this );
 
-        QLabel *sfLabel = new QLabel( "Scalar field:", this );
-        layout->addWidget( sfLabel );
+        // --- Scalar field (arvolista) ---
+        layout->addWidget( new QLabel( "Scalar field:", this ) );
+        m_valuesComboBox = new QComboBox( this );
+        layout->addWidget( m_valuesComboBox );
 
-        m_comboBox = new QComboBox( this );
-        layout->addWidget( m_comboBox );
-
-        QLabel *valuesLabel = new QLabel( "Arvot:", this );
-        layout->addWidget( valuesLabel );
-
+        // --- Arvolista ---
+        layout->addWidget( new QLabel( "Arvot:", this ) );
         m_listWidget = new QListWidget( this );
         m_listWidget->setMinimumHeight( 150 );
         layout->addWidget( m_listWidget );
 
-        // Päivitä arvolista kun combobox muuttuu
-        connect( m_comboBox, &QComboBox::currentTextChanged,
+        // --- Värjäyskenttä ---
+        layout->addWidget( new QLabel( "Värjää pisteet:", this ) );
+        m_colorComboBox = new QComboBox( this );
+        layout->addWidget( m_colorComboBox );
+
+        // Päivitä arvolista kun valuesComboBox muuttuu
+        connect( m_valuesComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
             {
                 populateValueList( fieldName );
+            } );
+
+        // Aseta värjäys kun colorComboBox muuttuu
+        connect( m_colorComboBox, &QComboBox::currentTextChanged,
+            [this]( const QString &fieldName )
+            {
+                applyColorField( fieldName );
             } );
     }
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )
     {
-        // Tallenna nykyinen valinta ennen päivitystä
-        QString currentField = m_comboBox->currentText();
+        QString keepValues = m_valuesComboBox->currentText();
+        QString keepColor  = m_colorComboBox->currentText();
 
         m_cloud = cloud;
 
-        // Päivitä combobox — säilytä valinta jos mahdollista
-        populateComboBox( currentField );
+        populateComboBox( m_valuesComboBox, keepValues );
+        populateComboBox( m_colorComboBox,  keepColor  );
     }
 
-    void MaastoDialog::populateComboBox( const QString &keepField )
+    void MaastoDialog::populateComboBox( QComboBox *comboBox, const QString &keepField )
     {
-        // Estetään turhat currentTextChanged-signaalit päivityksen aikana
-        m_comboBox->blockSignals( true );
-        m_comboBox->clear();
+        comboBox->blockSignals( true );
+        comboBox->clear();
 
         QStringList names = getScalarFieldNames( m_cloud );
-        m_comboBox->addItems( names );
-        m_comboBox->blockSignals( false );
+        comboBox->addItems( names );
+        comboBox->blockSignals( false );
 
         if ( names.isEmpty() )
         {
-            m_listWidget->clear();
+            if ( comboBox == m_valuesComboBox )
+                m_listWidget->clear();
             return;
         }
 
@@ -132,7 +142,7 @@ namespace MaastoPlugin
         int keepIdx = names.indexOf( keepField );
         if ( keepIdx >= 0 )
         {
-            m_comboBox->setCurrentIndex( keepIdx );
+            comboBox->setCurrentIndex( keepIdx );
         }
         else
         {
@@ -140,10 +150,14 @@ namespace MaastoPlugin
             int classIdx = names.indexOf(
                 QRegularExpression( "Classification",
                                     QRegularExpression::CaseInsensitiveOption ) );
-            m_comboBox->setCurrentIndex( classIdx >= 0 ? classIdx : 0 );
+            comboBox->setCurrentIndex( classIdx >= 0 ? classIdx : 0 );
         }
 
-        populateValueList( m_comboBox->currentText() );
+        if ( comboBox == m_valuesComboBox )
+            populateValueList( comboBox->currentText() );
+
+        if ( comboBox == m_colorComboBox )
+            applyColorField( comboBox->currentText() );
     }
 
     void MaastoDialog::populateValueList( const QString &fieldName )
@@ -152,8 +166,27 @@ namespace MaastoPlugin
         m_listWidget->addItems( getScalarFieldValues( m_cloud, fieldName ) );
     }
 
+    void MaastoDialog::applyColorField( const QString &fieldName )
+    {
+        if ( m_cloud == nullptr || fieldName.isEmpty() )
+            return;
+
+        int idx = m_cloud->getScalarFieldIndexByName( fieldName.toStdString().c_str() );
+        if ( idx < 0 )
+            return;
+
+        // Aseta scalar field aktiiviseksi ja kytke SF-väritys päälle
+        m_cloud->setCurrentDisplayedScalarField( idx );
+        m_cloud->showSF( true );
+        m_cloud->prepareDisplayForRefresh();
+
+        // Päivitä CC:n properties-paneeli ja 3D-näkymä
+        m_appInterface->updateUI();
+        m_appInterface->redrawAll();
+    }
+
     // ----------------------------------------------------------------
-    // openDialog — avaa tai nostaa etualalle
+    // openDialog
     // ----------------------------------------------------------------
 
     MaastoDialog *openDialog( ccMainAppInterface *appInterface, ccPointCloud *cloud )

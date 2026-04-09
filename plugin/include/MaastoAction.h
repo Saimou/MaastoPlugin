@@ -25,20 +25,28 @@ namespace MaastoPlugin
         ~MaastoDialog() override = default;
 
         // Päivittää dialogin uuden pistepilven mukaan.
-        // Säilyttää combobox-valinnan jos sama kenttä löytyy uudesta pilvestä.
+        // Säilyttää combobox-valinnat jos samat kentät löytyvät uudesta pilvestä.
         void updateCloud( ccPointCloud *cloud );
 
     private:
-        void populateComboBox( const QString &keepField = QString() );
+        void populateComboBox( QComboBox *comboBox, const QString &keepField = QString() );
         void populateValueList( const QString &fieldName );
+
+        // Asettaa valitun scalar-kentän aktiiviseksi CloudComparen 3D-näkymässä.
+        void applyColorField( const QString &fieldName );
 
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
-        QComboBox          *m_comboBox;
+
+        // Combobox: scalar-kenttä jonka arvot näytetään listassa
+        QComboBox          *m_valuesComboBox;
+
+        // Combobox: scalar-kenttä jolla pisteet värjätään 3D-näkymässä
+        QComboBox          *m_colorComboBox;
+
         QListWidget        *m_listWidget;
     };
 
     // Avaa dialogin tai nostaa sen etualalle jos jo auki.
-    // Palauttaa osoittimen dialogiin (omistajuus siirtyy kutsujalle / Qt parent-mekanismille).
     MaastoDialog *openDialog( ccMainAppInterface *appInterface, ccPointCloud *cloud );
 }
