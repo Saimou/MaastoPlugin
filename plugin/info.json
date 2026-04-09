@@ -1,0 +1,17 @@
+{
+	"type"        : "Standard",
+	"name"        : "MaastoPlugin",
+	"icon"        : ":/CC/plugin/qMaastoPlugin/images/icon.png",
+	"description" : "MaastoPlugin - CloudCompare plugin",
+	"authors"     : [
+		{
+			"name"  : "MaastoPlugin Developer"
+		}
+	],
+	"maintainers" : [
+		{
+			"name"  : "MaastoPlugin Developer"
+		}
+	],
+	"references"  : []
+}

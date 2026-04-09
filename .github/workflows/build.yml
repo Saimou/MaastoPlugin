@@ -1,0 +1,138 @@
+name: Build MaastoPlugin
+
+on: [push, pull_request]
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # Ubuntu build → libQMAASTO_PLUGIN.so
+  # ─────────────────────────────────────────────
+  ubuntu-build:
+    name: Ubuntu (GCC)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout MaastoPlugin
+        uses: actions/checkout@v4
+        with:
+          path: MaastoPlugin
+
+      - name: Checkout CloudCompare v2.13.2
+        uses: actions/checkout@v4
+        with:
+          repository: CloudCompare/CloudCompare
+          ref: v2.13.2
+          submodules: recursive
+          path: CloudCompare
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            cmake ninja-build \
+            qtbase5-dev qttools5-dev qttools5-dev-tools \
+            libqt5svg5-dev libqt5opengl5-dev libqt5websockets5-dev \
+            libeigen3-dev libjsoncpp-dev
+
+      - name: Copy plugin into CloudCompare sources
+        run: cp -r MaastoPlugin/plugin CloudCompare/plugins/private/qMaastoPlugin
+
+      - name: Configure CMake
+        run: |
+          cmake \
+            -B CloudCompare/build \
+            -S CloudCompare \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEIGEN_ROOT_DIR=/usr/include/eigen3 \
+            -DJSON_ROOT_DIR=/usr/include/jsoncpp \
+            -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
+            -DPLUGIN_IO_QCORE=ON
+
+      - name: Build
+        run: cmake --build CloudCompare/build --parallel
+
+      - name: Install
+        run: cmake --install CloudCompare/build --prefix install-output
+
+      - name: Find plugin .so
+        run: find install-output -name "*.so" | grep -i maasto
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaastoPlugin-ubuntu
+          path: install-output/
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────
+  # Windows build → QMAASTO_PLUGIN.dll
+  # ─────────────────────────────────────────────
+  windows-build:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout MaastoPlugin
+        uses: actions/checkout@v4
+        with:
+          path: MaastoPlugin
+
+      - name: Checkout CloudCompare v2.13.2
+        uses: actions/checkout@v4
+        with:
+          repository: CloudCompare/CloudCompare
+          ref: v2.13.2
+          submodules: recursive
+          path: CloudCompare
+
+      - name: Install dependencies (conda)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          architecture: x64
+          activate-environment: CloudCompareDev
+          auto-activate-base: false
+          environment-file: CloudCompare/.ci/conda-win.yml
+          mamba-version: "*"
+
+      - name: Configure MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set MSVC as compiler
+        run: |
+          echo "CXX=cl.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "CC=cl.exe"  | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Copy plugin into CloudCompare sources
+        run: Copy-Item -Recurse MaastoPlugin/plugin CloudCompare/plugins/private/qMaastoPlugin
+
+      - name: Configure CMake
+        shell: bash -l {0}
+        run: |
+          export CONDA_LIB_DIR="$CONDA_PREFIX/Library"
+          export EIGEN_ROOT_DIR="$CONDA_LIB_DIR/include/eigen3"
+          cmake \
+            -B CloudCompare/build \
+            -S CloudCompare \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$CONDA_LIB_DIR" \
+            -DEIGEN_ROOT_DIR="$EIGEN_ROOT_DIR" \
+            -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
+            -DPLUGIN_IO_QCORE=ON
+
+      - name: Build
+        run: cmake --build CloudCompare/build --parallel
+
+      - name: Install
+        run: cmake --install CloudCompare/build --prefix install-output
+
+      - name: Find plugin .dll
+        run: Get-ChildItem -Recurse install-output -Filter "*maasto*"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaastoPlugin-windows
+          path: install-output/
+          if-no-files-found: error
