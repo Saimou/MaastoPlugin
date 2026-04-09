@@ -8,7 +8,6 @@
 #include <QDialog>
 #include <QVBoxLayout>
 #include <QLabel>
-#include <QPushButton>
 #include <QComboBox>
 #include <QListWidget>
 #include <QSet>
@@ -94,10 +93,6 @@ namespace MaastoPlugin
 
         QVBoxLayout *layout = new QVBoxLayout( &dialog );
 
-        // --- Nappi ---
-        QPushButton *button = new QPushButton( "Paina minua!", &dialog );
-        layout->addWidget( button );
-
         // --- Scalar field -otsikko + combobox ---
         QLabel *sfLabel = new QLabel( "Scalar field:", &dialog );
         layout->addWidget( sfLabel );
@@ -138,16 +133,6 @@ namespace MaastoPlugin
                 listWidget->clear();
                 listWidget->addItems( getScalarFieldValues( cloud, fieldName ) );
             } );
-
-        // --- Napin painallus tulostaa "hello world!" konsoliin ---
-        QObject::connect( button, &QPushButton::clicked, [&]()
-        {
-            appInterface->dispToConsole(
-                "hello world!",
-                ccMainAppInterface::STD_CONSOLE_MESSAGE
-            );
-            dialog.accept();
-        } );
 
         dialog.exec();
     }
