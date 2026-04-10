@@ -1,4 +1,5 @@
 #include "MaastoAction.h"
+#include "PolygonDrawer.h"
 
 #include "ccMainAppInterface.h"
 #include "ccHObjectCaster.h"
@@ -78,6 +79,8 @@ namespace MaastoPlugin
         , m_targetClassComboBox( nullptr )
         , m_colorComboBox( nullptr )
         , m_updatingCloud( false )
+        , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
+        , m_polygonButton( nullptr )
     {
         setWindowTitle( "MaastoPlugin" );
         setMinimumWidth( 320 );
@@ -124,8 +127,9 @@ namespace MaastoPlugin
         // --- Napbirivi alimmaisena ---
         QHBoxLayout *buttonRow = new QHBoxLayout();
 
-        QPushButton *polygonButton = new QPushButton( "Piirrä polygon", this );
-        buttonRow->addWidget( polygonButton );
+        m_polygonButton = new QPushButton( "Piirrä polygon", this );
+        m_polygonButton->setCheckable( true );
+        buttonRow->addWidget( m_polygonButton );
 
         QPushButton *actionButton = new QPushButton( this );
         actionButton->setIcon( QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
@@ -134,6 +138,23 @@ namespace MaastoPlugin
         buttonRow->addWidget( actionButton );
 
         layout->addLayout( buttonRow );
+
+        // Polygon-piirto: nappi toggleataan ON/OFF
+        connect( m_polygonButton, &QPushButton::toggled, this, [this]( bool checked )
+        {
+            if ( checked )
+                m_polygonDrawer->startDrawing();
+            else
+                m_polygonDrawer->stopDrawing();
+        } );
+
+        // Kun piirto päättyy (polygon suljettu tai peruutettu), palautetaan nappi OFF
+        connect( m_polygonDrawer, &PolygonDrawer::drawingFinished, this, [this]()
+        {
+            m_polygonButton->blockSignals( true );
+            m_polygonButton->setChecked( false );
+            m_polygonButton->blockSignals( false );
+        } );
     }
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )

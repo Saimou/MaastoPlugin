@@ -3,9 +3,11 @@
 #include <QDialog>
 #include <QComboBox>
 #include <QListWidget>
+#include <QPushButton>
 
 class ccMainAppInterface;
 class ccPointCloud;
+class PolygonDrawer;
 
 namespace MaastoPlugin
 {
@@ -56,6 +58,12 @@ namespace MaastoPlugin
 
         // Estää updateCloud()-silmukan kun CC triggeroi onNewSelection() updateUI():n jälkeen
         bool                m_updatingCloud;
+
+        // Polygon-piirtotyökalu
+        PolygonDrawer      *m_polygonDrawer;
+
+        // Piirrä polygon -nappi (checkable)
+        QPushButton        *m_polygonButton;
     };
 
     // Avaa dialogin tai nostaa sen etualalle jos jo auki.
