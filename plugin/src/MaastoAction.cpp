@@ -71,8 +71,9 @@ namespace MaastoPlugin
         , m_appInterface( appInterface )
         , m_cloud( nullptr )
         , m_valuesComboBox( nullptr )
-        , m_colorComboBox( nullptr )
         , m_listWidget( nullptr )
+        , m_targetClassComboBox( nullptr )
+        , m_colorComboBox( nullptr )
         , m_updatingCloud( false )
     {
         setWindowTitle( "MaastoPlugin" );
@@ -81,27 +82,33 @@ namespace MaastoPlugin
 
         QVBoxLayout *layout = new QVBoxLayout( this );
 
-        // --- Scalar field (arvolista) ---
+        // --- Scalar field ---
         layout->addWidget( new QLabel( "Scalar field:", this ) );
         m_valuesComboBox = new QComboBox( this );
         layout->addWidget( m_valuesComboBox );
 
-        // --- Arvolista ---
+        // --- Arvot (checkbox-monivalinta) ---
         layout->addWidget( new QLabel( "Arvot:", this ) );
         m_listWidget = new QListWidget( this );
         m_listWidget->setMinimumHeight( 150 );
         layout->addWidget( m_listWidget );
 
-        // --- Värjäyskenttä ---
+        // --- Luokittele luokkaan ---
+        layout->addWidget( new QLabel( "Luokittele luokkaan:", this ) );
+        m_targetClassComboBox = new QComboBox( this );
+        layout->addWidget( m_targetClassComboBox );
+
+        // --- Värjää pisteet ---
         layout->addWidget( new QLabel( "Värjää pisteet:", this ) );
         m_colorComboBox = new QComboBox( this );
         layout->addWidget( m_colorComboBox );
 
-        // Päivitä arvolista kun valuesComboBox muuttuu
+        // Päivitä arvolista ja kohdeluokka kun valuesComboBox muuttuu
         connect( m_valuesComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
             {
                 populateValueList( fieldName );
+                populateTargetClassComboBox();
             } );
 
         // Aseta värjäys kun colorComboBox muuttuu
@@ -114,19 +121,19 @@ namespace MaastoPlugin
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )
     {
-        // Estä uudelleensyöttö: CC saattaa triggeröidä onNewSelection()
-        // updateUI():n seurauksena, mikä kutsuisi tätä uudelleen
         if ( m_updatingCloud )
             return;
         m_updatingCloud = true;
 
-        QString keepValues = m_valuesComboBox->currentText();
-        QString keepColor  = m_colorComboBox->currentText();
+        QString keepValues      = m_valuesComboBox->currentText();
+        QString keepTargetClass = m_targetClassComboBox->currentText();
+        QString keepColor       = m_colorComboBox->currentText();
 
         m_cloud = cloud;
 
         populateComboBox( m_valuesComboBox, keepValues );
-        populateComboBox( m_colorComboBox,  keepColor  );
+        populateTargetClassComboBox( keepTargetClass );
+        populateComboBox( m_colorComboBox, keepColor );
 
         m_updatingCloud = false;
     }
@@ -163,7 +170,10 @@ namespace MaastoPlugin
         }
 
         if ( comboBox == m_valuesComboBox )
+        {
             populateValueList( comboBox->currentText() );
+            populateTargetClassComboBox();
+        }
 
         if ( comboBox == m_colorComboBox )
             applyColorField( comboBox->currentText() );
@@ -172,7 +182,32 @@ namespace MaastoPlugin
     void MaastoDialog::populateValueList( const QString &fieldName )
     {
         m_listWidget->clear();
-        m_listWidget->addItems( getScalarFieldValues( m_cloud, fieldName ) );
+
+        const QStringList values = getScalarFieldValues( m_cloud, fieldName );
+        for ( const QString &val : values )
+        {
+            QListWidgetItem *item = new QListWidgetItem( val, m_listWidget );
+            item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
+            item->setCheckState( Qt::Unchecked );
+        }
+    }
+
+    void MaastoDialog::populateTargetClassComboBox( const QString &keepValue )
+    {
+        m_targetClassComboBox->blockSignals( true );
+        m_targetClassComboBox->clear();
+
+        // Samat arvot kuin Arvot-listassa — haetaan valitun scalar-kentän mukaan
+        const QStringList values = getScalarFieldValues( m_cloud, m_valuesComboBox->currentText() );
+        m_targetClassComboBox->addItems( values );
+        m_targetClassComboBox->blockSignals( false );
+
+        if ( values.isEmpty() )
+            return;
+
+        // Säilytä edellinen valinta jos mahdollista
+        int keepIdx = values.indexOf( keepValue );
+        m_targetClassComboBox->setCurrentIndex( keepIdx >= 0 ? keepIdx : 0 );
     }
 
     void MaastoDialog::applyColorField( const QString &fieldName )

@@ -34,6 +34,7 @@ namespace MaastoPlugin
     private:
         void populateComboBox( QComboBox *comboBox, const QString &keepField = QString() );
         void populateValueList( const QString &fieldName );
+        void populateTargetClassComboBox( const QString &keepValue = QString() );
 
         // Asettaa valitun scalar-kentän aktiiviseksi CloudComparen 3D-näkymässä.
         void applyColorField( const QString &fieldName );
@@ -44,10 +45,14 @@ namespace MaastoPlugin
         // Combobox: scalar-kenttä jonka arvot näytetään listassa
         QComboBox          *m_valuesComboBox;
 
+        // Lista: uniikit arvot valitusta scalar-kentästä (checkbox-monivalinta)
+        QListWidget        *m_listWidget;
+
+        // Combobox: mihin luokkaan pisteet luokitellaan
+        QComboBox          *m_targetClassComboBox;
+
         // Combobox: scalar-kenttä jolla pisteet värjätään 3D-näkymässä
         QComboBox          *m_colorComboBox;
-
-        QListWidget        *m_listWidget;
 
         // Estää updateCloud()-silmukan kun CC triggeroi onNewSelection() updateUI():n jälkeen
         bool                m_updatingCloud;
