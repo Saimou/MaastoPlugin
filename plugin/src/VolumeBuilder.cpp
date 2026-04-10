@@ -228,7 +228,7 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
     if ( insideIndices.empty() )
         return nullptr;
 
-    // Täytä outIndices jos pyydetty (luokittelua varten)
+    // Täytä outIndices (highlight-pilven luonti on siirretty MaastoDialog:iin)
     if ( outIndices )
     {
         outIndices->insert( outIndices->end(),
@@ -236,31 +236,7 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
                             insideIndices.end() );
     }
 
-    // ---- Luo uusi korostettu pistepilvi ----
-    ++s_highlightCounter;
-    ccPointCloud* highlighted = new ccPointCloud(
-        QString( "Highlighted_%1" ).arg( s_highlightCounter ) );
-
-    if ( !highlighted->reserve( static_cast<unsigned>( insideIndices.size() ) ) )
-    {
-        delete highlighted;
-        return nullptr;
-    }
-
-    for ( unsigned idx : insideIndices )
-        highlighted->addPoint( *cloud->getPoint( idx ) );
-
-    // Keltainen väri kaikille pisteille
-    if ( highlighted->reserveTheRGBTable() )
-    {
-        for ( std::size_t i = 0; i < insideIndices.size(); ++i )
-            highlighted->addColor( ccColor::Rgba( 255, 255, 0, 255 ) );
-        highlighted->showColors( true );
-    }
-
-    // Pistekoko: alkuperäisen pilven koko + 2 (min 3)
-    const unsigned char origSize = cloud->getPointSize();
-    highlighted->setPointSize( origSize > 0 ? origSize + 2 : 3 );
-
-    return highlighted;
+    // Highlight-pilven luonti on siirretty MaastoDialog::createFilteredHighlight():iin
+    // jotta sitä voidaan päivittää dynaamisesti Arvot-valinnan mukaan
+    return nullptr;
 }

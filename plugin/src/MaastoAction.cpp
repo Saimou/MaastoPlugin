@@ -7,6 +7,7 @@
 #include "ccMesh.h"
 #include "ccPointCloud.h"
 #include "ccHObject.h"
+#include "ccColorTypes.h"
 
 #include <QMainWindow>
 #include <QVBoxLayout>
@@ -152,7 +153,7 @@ namespace MaastoPlugin
                 m_listWidget->blockSignals( false );
             } );
 
-        // Jos käyttäjä klikkaa yksittäistä riviä, palautetaan nappi OFF-tilaan
+        // Jos käyttäjä klikkaa yksittäistä riviä: palauta nappi OFF + päivitä highlightit
         connect( m_listWidget, &QListWidget::itemChanged,
             [this]( QListWidgetItem* )
             {
@@ -160,6 +161,7 @@ namespace MaastoPlugin
                 m_selectAllButton->setChecked( false );
                 m_selectAllButton->setText( "Valitse kaikki" );
                 m_selectAllButton->blockSignals( false );
+                refreshHighlights();
             } );
 
         // --- Napbirivi alimmaisena ---
@@ -244,13 +246,13 @@ namespace MaastoPlugin
                 if ( mesh )
                 {
                     m_appInterface->addToDB( mesh );
-                    m_volumeObjects.push_back( mesh );
+                    m_meshObjects.push_back( mesh );
 
-                    // Korostaa prisman sisällä olevat pisteet
+                    // Kerää prisman sisällä olevien pisteiden indeksit
                     if ( m_cloud != nullptr )
                     {
                         std::vector<unsigned> indices;
-                        ccPointCloud *highlighted = VolumeBuilder::highlightPointsInsideVolume(
+                        VolumeBuilder::highlightPointsInsideVolume(
                             m_polygonDrawer->getClosedVertices(),
                             win,
                             m_cloud,
@@ -258,22 +260,11 @@ namespace MaastoPlugin
                             m_farDistSpinBox->value(),
                             &indices
                         );
-                        if ( highlighted )
+                        if ( !indices.empty() )
                         {
-                            // Lisää uudet indeksit listaan (akkumuloidaan useammasta prismasta)
                             m_highlightedIndices.insert(
                                 m_highlightedIndices.end(),
                                 indices.begin(), indices.end() );
-
-                            m_cloud->addChild( highlighted );
-                            m_appInterface->addToDB(
-                                highlighted,
-                                false,  // updateZoom
-                                false,  // autoExpandDBTree
-                                false,  // checkDimensions
-                                false   // autoRedraw
-                            );
-                            m_volumeObjects.push_back( highlighted );
                         }
                         else
                         {
@@ -283,8 +274,8 @@ namespace MaastoPlugin
                         }
                     }
 
-                    m_appInterface->updateUI();
-                    m_appInterface->refreshAll();
+                    // Päivitä highlight-pilvet valittujen arvojen mukaan
+                    refreshHighlights();
                 }
                 else
                 {
@@ -487,12 +478,7 @@ namespace MaastoPlugin
         if ( !sf ) return;
 
         // Kerää valitut arvot Arvot-listasta (☑-rivit)
-        QSet<float> selectedValues;
-        for ( int i = 0; i < m_listWidget->count(); ++i )
-        {
-            if ( m_listWidget->item( i )->checkState() == Qt::Checked )
-                selectedValues.insert( m_listWidget->item( i )->text().toFloat() );
-        }
+        const QSet<float> selectedValues = getCheckedValues();
 
         if ( selectedValues.isEmpty() )
         {
@@ -522,15 +508,139 @@ namespace MaastoPlugin
         m_cloud->prepareDisplayForRefresh();
 
         // Poista 3D-kappaleet ja highlight-pilvet DB:stä
-        for ( ccHObject *obj : m_volumeObjects )
+        for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
-        m_volumeObjects.clear();
+        m_meshObjects.clear();
+
+        removeHighlightObjects();
         m_highlightedIndices.clear();
 
         m_appInterface->dispToConsole(
             QString( "MaastoPlugin: luokiteltu %1 pistettä → %2" )
                 .arg( count ).arg( targetStr ),
             ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+        m_appInterface->updateUI();
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // getCheckedValues
+    // ----------------------------------------------------------------
+
+    QSet<float> MaastoDialog::getCheckedValues() const
+    {
+        QSet<float> values;
+        for ( int i = 0; i < m_listWidget->count(); ++i )
+            if ( m_listWidget->item( i )->checkState() == Qt::Checked )
+                values.insert( m_listWidget->item( i )->text().toFloat() );
+        return values;
+    }
+
+    // ----------------------------------------------------------------
+    // createFilteredHighlight
+    // ----------------------------------------------------------------
+
+    ccPointCloud* MaastoDialog::createFilteredHighlight( const QSet<float>& selectedValues )
+    {
+        static int s_counter = 0;
+
+        if ( !m_cloud || m_highlightedIndices.empty() || selectedValues.isEmpty() )
+            return nullptr;
+
+        const QString sfName = m_valuesComboBox->currentText();
+        if ( sfName.isEmpty() )
+            return nullptr;
+
+        int sfIdx = m_cloud->getScalarFieldIndexByName( sfName.toStdString().c_str() );
+        if ( sfIdx < 0 )
+            return nullptr;
+
+        CCCoreLib::ScalarField *sf = m_cloud->getScalarField( sfIdx );
+        if ( !sf )
+            return nullptr;
+
+        // Kerää pisteet joiden arvo on valituissa arvoissa
+        std::vector<unsigned> matchIndices;
+        for ( unsigned idx : m_highlightedIndices )
+        {
+            if ( idx >= m_cloud->size() )
+                continue;
+            const float val = static_cast<float>( sf->getValue( idx ) );
+            if ( selectedValues.contains( val ) )
+                matchIndices.push_back( idx );
+        }
+
+        if ( matchIndices.empty() )
+            return nullptr;
+
+        ++s_counter;
+        ccPointCloud *highlighted = new ccPointCloud(
+            QString( "Highlighted_%1" ).arg( s_counter ) );
+
+        if ( !highlighted->reserve( static_cast<unsigned>( matchIndices.size() ) ) )
+        {
+            delete highlighted;
+            return nullptr;
+        }
+
+        for ( unsigned idx : matchIndices )
+            highlighted->addPoint( *m_cloud->getPoint( idx ) );
+
+        // Keltainen väri
+        if ( highlighted->reserveTheRGBTable() )
+        {
+            for ( std::size_t i = 0; i < matchIndices.size(); ++i )
+                highlighted->addColor( ccColor::Rgba( 255, 255, 0, 255 ) );
+            highlighted->showColors( true );
+        }
+
+        const unsigned char origSize = m_cloud->getPointSize();
+        highlighted->setPointSize( origSize > 0 ? origSize + 2 : 3 );
+
+        return highlighted;
+    }
+
+    // ----------------------------------------------------------------
+    // removeHighlightObjects
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::removeHighlightObjects()
+    {
+        for ( ccHObject *obj : m_highlightObjects )
+            m_appInterface->removeFromDB( obj, true );
+        m_highlightObjects.clear();
+    }
+
+    // ----------------------------------------------------------------
+    // refreshHighlights
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::refreshHighlights()
+    {
+        removeHighlightObjects();
+
+        if ( !m_cloud || m_highlightedIndices.empty() )
+        {
+            m_appInterface->refreshAll();
+            return;
+        }
+
+        const QSet<float> selectedValues = getCheckedValues();
+        ccPointCloud *highlighted = createFilteredHighlight( selectedValues );
+
+        if ( highlighted )
+        {
+            m_cloud->addChild( highlighted );
+            m_appInterface->addToDB(
+                highlighted,
+                false,  // updateZoom
+                false,  // autoExpandDBTree
+                false,  // checkDimensions
+                false   // autoRedraw
+            );
+            m_highlightObjects.push_back( highlighted );
+        }
 
         m_appInterface->updateUI();
         m_appInterface->refreshAll();
