@@ -63,7 +63,7 @@ private:
 
     // Edellinen valmis polygon — jää näkyviin kunnes uusi aloitetaan
     ccPolyline          *m_previousPolyline;
-    ccPointCloud        *m_previousVertices;
+    ccGLWindowInterface *m_previousGLWindow;  // ikkuna johon m_previousPolyline on rekisteröity
 
     bool                 m_drawing;
 };

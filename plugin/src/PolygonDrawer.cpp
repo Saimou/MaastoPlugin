@@ -13,23 +13,26 @@ PolygonDrawer::PolygonDrawer( ccMainAppInterface *app, QObject *parent )
     , m_vertices( nullptr )
     , m_polyline( nullptr )
     , m_previousPolyline( nullptr )
-    , m_previousVertices( nullptr )
+    , m_previousGLWindow( nullptr )
     , m_drawing( false )
 {
 }
 
 PolygonDrawer::~PolygonDrawer()
 {
+    // Siivoa kesken jäänyt piirto
     stopDrawing();
 
-    // Siivoa edellinen polygon jos jäi näkyviin
-    if ( m_glWindow && m_previousPolyline )
-        m_glWindow->removeFromOwnDB( m_previousPolyline );
+    // Siivoa valmis polygon joka jäi näkyviin GL-ikkunaan
+    // m_previousGLWindow tallentaa ikkunan johon polygon rekisteröitiin
+    if ( m_previousGLWindow && m_previousPolyline )
+        m_previousGLWindow->removeFromOwnDB( m_previousPolyline );
 
+    // Poistetaan vain polyline — vertices on addChild:na polylinella
+    // joten se tuhotaan automaattisesti polyline:n mukana
     delete m_previousPolyline;
-    delete m_previousVertices;
-    delete m_polyline;
-    delete m_vertices;
+    m_previousPolyline = nullptr;
+    m_previousGLWindow = nullptr;
 }
 
 void PolygonDrawer::startDrawing()
@@ -46,14 +49,14 @@ void PolygonDrawer::startDrawing()
         return;
     }
 
-    // Poista edellinen valmis polygon
+    // Poista edellinen valmis polygon GL-ikkunasta
     if ( m_previousPolyline )
     {
-        m_glWindow->removeFromOwnDB( m_previousPolyline );
+        if ( m_previousGLWindow )
+            m_previousGLWindow->removeFromOwnDB( m_previousPolyline );
         delete m_previousPolyline;
         m_previousPolyline = nullptr;
-        delete m_previousVertices;
-        m_previousVertices = nullptr;
+        m_previousGLWindow = nullptr;
     }
 
     // Luo uusi polygon-rakenne
@@ -61,7 +64,7 @@ void PolygonDrawer::startDrawing()
     m_vertices->setEnabled( false );   // ei renderöidä pistepilvenä
 
     m_polyline = new ccPolyline( m_vertices );
-    m_polyline->addChild( m_vertices );
+    m_polyline->addChild( m_vertices );  // polyline omistaa vertices:in
     m_polyline->set2DMode( true );       // 2D screen-space overlay
     m_polyline->setForeground( true );   // piirretään foreground-passissa
     m_polyline->setColor( ccColor::red );
@@ -111,9 +114,9 @@ void PolygonDrawer::stopDrawing()
     {
         if ( m_glWindow )
             m_glWindow->removeFromOwnDB( m_polyline );
-        delete m_polyline;
+        delete m_polyline;         // poistaa myös m_vertices (addChild)
         m_polyline = nullptr;
-        m_vertices = nullptr;  // omistajuus siirtyi polylinelle (addChild)
+        m_vertices = nullptr;
     }
 
     m_glWindow = nullptr;
@@ -216,23 +219,19 @@ void PolygonDrawer::onRightClick( int /*x*/, int /*y*/ )
     // Poista rubber-band seuraa-piste ja sulje polygon
     m_polyline->resize( vertCount - 1 );
     m_polyline->setClosed( true );
-
     m_glWindow->redraw( true, false );
 
-    // Siirrä valmis polygon "edellinen"-slottiin jotta se jää näkyviin
+    // Katkaise signaalit ja palauta normaali tila
     disconnectFromWindow();
+    m_glWindow->setInteractionMode( ccGLWindowInterface::MODE_TRANSFORM_CAMERA );
+    m_glWindow->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
 
-    if ( m_glWindow )
-    {
-        m_glWindow->setInteractionMode( ccGLWindowInterface::MODE_TRANSFORM_CAMERA );
-        m_glWindow->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
-    }
-
-    // Tallenna valmis polygon
+    // Siirrä valmis polygon "edellinen"-slottiin jotta se jää näkyviin.
+    // Tallennetaan GL-ikkuna jotta destruktori osaa siivota sen myöhemmin.
     m_previousPolyline = m_polyline;
-    m_previousVertices = m_vertices;
+    m_previousGLWindow = m_glWindow;  // ← tallennetaan ennen nollausta
     m_polyline         = nullptr;
-    m_vertices         = nullptr;
+    m_vertices         = nullptr;     // omistajuus on polylinella (addChild)
 
     m_glWindow = nullptr;
     m_drawing  = false;
@@ -249,7 +248,7 @@ void PolygonDrawer::resetCurrentPolygon()
     if ( m_glWindow && m_polyline )
         m_glWindow->removeFromOwnDB( m_polyline );
 
-    delete m_polyline;
+    delete m_polyline;   // poistaa myös m_vertices (addChild)
     m_polyline = nullptr;
     m_vertices = nullptr;
 }
