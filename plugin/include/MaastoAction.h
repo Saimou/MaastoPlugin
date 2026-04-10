@@ -4,6 +4,7 @@
 #include <QComboBox>
 #include <QListWidget>
 #include <QPushButton>
+#include <QDoubleSpinBox>
 
 class ccMainAppInterface;
 class ccPointCloud;
@@ -64,6 +65,10 @@ namespace MaastoPlugin
 
         // Piirrä polygon -nappi (checkable)
         QPushButton        *m_polygonButton;
+
+        // Etäisyysasetukset 3D-kappaleen etukanteen ja takakanteen
+        QDoubleSpinBox     *m_nearDistSpinBox;
+        QDoubleSpinBox     *m_farDistSpinBox;
     };
 
     // Avaa dialogin tai nostaa sen etualalle jos jo auki.

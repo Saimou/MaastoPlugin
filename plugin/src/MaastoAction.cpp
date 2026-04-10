@@ -10,8 +10,10 @@
 #include <QMainWindow>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QDoubleSpinBox>
 #include <QIcon>
 #include <QSet>
 #include <QStringList>
@@ -83,6 +85,8 @@ namespace MaastoPlugin
         , m_updatingCloud( false )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
+        , m_nearDistSpinBox( nullptr )
+        , m_farDistSpinBox( nullptr )
     {
         setWindowTitle( "MaastoPlugin" );
         setMinimumWidth( 320 );
@@ -141,6 +145,42 @@ namespace MaastoPlugin
 
         layout->addLayout( buttonRow );
 
+        // --- Etäisyysasetukset ---
+        QFormLayout *distForm = new QFormLayout();
+        distForm->setContentsMargins( 0, 4, 0, 4 );
+
+        m_nearDistSpinBox = new QDoubleSpinBox( this );
+        m_nearDistSpinBox->setRange( 0.1, 9999.0 );
+        m_nearDistSpinBox->setSingleStep( 0.5 );
+        m_nearDistSpinBox->setValue( 10.0 );
+        m_nearDistSpinBox->setSuffix( " m" );
+        m_nearDistSpinBox->setDecimals( 1 );
+        distForm->addRow( "Lähin etäisyys:", m_nearDistSpinBox );
+
+        m_farDistSpinBox = new QDoubleSpinBox( this );
+        m_farDistSpinBox->setRange( 0.1, 9999.0 );
+        m_farDistSpinBox->setSingleStep( 0.5 );
+        m_farDistSpinBox->setValue( 50.0 );
+        m_farDistSpinBox->setSuffix( " m" );
+        m_farDistSpinBox->setDecimals( 1 );
+        distForm->addRow( "Pisin etäisyys:", m_farDistSpinBox );
+
+        layout->addLayout( distForm );
+
+        // Validointi: lähin < pisin
+        connect( m_nearDistSpinBox, QOverload<double>::of( &QDoubleSpinBox::valueChanged ),
+            [this]( double val )
+            {
+                if ( val >= m_farDistSpinBox->value() )
+                    m_farDistSpinBox->setValue( val + 1.0 );
+            } );
+        connect( m_farDistSpinBox, QOverload<double>::of( &QDoubleSpinBox::valueChanged ),
+            [this]( double val )
+            {
+                if ( val <= m_nearDistSpinBox->value() )
+                    m_nearDistSpinBox->setValue( val - 1.0 );
+            } );
+
         // Polygon-piirto: nappi toggleataan ON/OFF
         connect( m_polygonButton, &QPushButton::toggled, this, [this]( bool checked )
         {
@@ -160,8 +200,8 @@ namespace MaastoPlugin
                 ccMesh *mesh = VolumeBuilder::build(
                     m_polygonDrawer->getClosedVertices(),
                     win,
-                    10.0,   // nearDist — myöhemmin SpinBox
-                    50.0    // farDist  — myöhemmin SpinBox
+                    m_nearDistSpinBox->value(),
+                    m_farDistSpinBox->value()
                 );
                 if ( mesh )
                 {
