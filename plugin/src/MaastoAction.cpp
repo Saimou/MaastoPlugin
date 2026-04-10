@@ -148,12 +148,11 @@ namespace MaastoPlugin
                 m_polygonDrawer->stopDrawing();
         } );
 
-        // Kun piirto päättyy (polygon suljettu tai peruutettu), palautetaan nappi OFF
-        connect( m_polygonDrawer, &PolygonDrawer::drawingFinished, this, [this]()
+        // Kun polygon suljetaan, aloitetaan uusi piirto automaattisesti
+        // Nappi pysyy ON-tilassa kunnes käyttäjä painaa sitä manuaalisesti
+        connect( m_polygonDrawer, &PolygonDrawer::polygonClosed, this, [this]()
         {
-            m_polygonButton->blockSignals( true );
-            m_polygonButton->setChecked( false );
-            m_polygonButton->blockSignals( false );
+            m_polygonDrawer->startDrawing();
         } );
     }
 
