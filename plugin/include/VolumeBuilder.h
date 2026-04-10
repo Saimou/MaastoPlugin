@@ -3,16 +3,11 @@
 #include "PolygonDrawer.h"
 
 class ccMesh;
+class ccPointCloud;
 class ccGLWindowInterface;
 
-// Rakentaa 3D-prismakappaleen piirretystä 2D-polygonista.
-//
-// Prisma syntyy projisoimalla polygonin kulmat kahteen syvyyteen
-// kameran katselusuunnassa:
-//   - Etukansi: nearDist metriä kamerasta
-//   - Takakansi: farDist metriä kamerasta
-//
-// Asetukset (nearDist ja farDist) lisätään myöhemmin dialogin SpinBox-kenttiin.
+// Rakentaa 3D-prismakappaleen piirretystä 2D-polygonista ja tarjoaa
+// apumetodeja prisman sisällä olevien pisteiden tunnistamiseen.
 
 class VolumeBuilder
 {
@@ -27,4 +22,15 @@ public:
                           ccGLWindowInterface*                        glWindow,
                           double                                      nearDist = 10.0,
                           double                                      farDist  = 50.0 );
+
+    // Etsii pistepilvestä pisteet jotka ovat prisman sisällä ja luo niistä
+    // erillisen korostetun pistepilven (keltainen väri, pistekoko +2).
+    // Palauttaa uuden pilven tai nullptr jos yksikään piste ei ole sisällä.
+    // Kutsuja on vastuussa palautetun pilven lisäämisestä DB:hen.
+    static ccPointCloud* highlightPointsInsideVolume(
+        const std::vector<PolygonDrawer::Point2D>& polygon2D,
+        ccGLWindowInterface*                        glWindow,
+        ccPointCloud*                               cloud,
+        double                                      nearDist,
+        double                                      farDist );
 };

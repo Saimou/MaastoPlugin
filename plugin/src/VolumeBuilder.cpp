@@ -5,6 +5,7 @@
 #include "ccMesh.h"
 #include "ccGLWindowInterface.h"
 #include "ccViewportParameters.h"
+#include "ManualSegmentationTools.h"
 
 #include <QString>
 #include <cmath>
@@ -144,4 +145,113 @@ ccMesh* VolumeBuilder::build( const std::vector<PolygonDrawer::Point2D>& polygon
     mesh->setName( QString( "MaastoVolume_%1" ).arg( s_counter ) );
 
     return mesh;
+}
+
+// ----------------------------------------------------------------
+// VolumeBuilder::highlightPointsInsideVolume
+// ----------------------------------------------------------------
+ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
+    const std::vector<PolygonDrawer::Point2D>& polygon2D,
+    ccGLWindowInterface*                        glWindow,
+    ccPointCloud*                               cloud,
+    double                                      nearDist,
+    double                                      farDist )
+{
+    static int s_highlightCounter = 0;
+
+    if ( polygon2D.empty() || !glWindow || !cloud || cloud->size() == 0 )
+        return nullptr;
+
+    // ---- Kameran parametrit ----
+    ccGLCameraParameters camera;
+    glWindow->getGLCameraParameters( camera );
+
+    const ccViewportParameters& vp = glWindow->getViewportParameters();
+    const CCVector3d forward = vp.getViewDir();
+
+    // Kameran world-space sijainti (object-centered vs viewer-centered)
+    CCVector3d eyePos = vp.getCameraCenter();
+    if ( vp.objectCenteredView )
+    {
+        CCVector3d PC = vp.getCameraCenter() - vp.getPivotPoint();
+        vp.viewMat.inverse().apply( PC );
+        eyePos = vp.getPivotPoint() + PC;
+    }
+
+    // ---- Polygon corner GL -koordinaateissa (ManualSegmentationTools käyttää näitä) ----
+    const double halfW = camera.viewport[2] * 0.5;
+    const double halfH = camera.viewport[3] * 0.5;
+
+    std::vector<CCVector2> poly2D;
+    poly2D.reserve( polygon2D.size() );
+    for ( const auto& pt : polygon2D )
+    {
+        // centered GL → corner GL
+        poly2D.push_back( CCVector2(
+            static_cast<PointCoordinateType>( pt[0] + halfW ),
+            static_cast<PointCoordinateType>( pt[1] + halfH )
+        ) );
+    }
+
+    // ---- Käy pistepilvi läpi ja kerää sisällä olevat ----
+    std::vector<unsigned> insideIndices;
+
+    for ( unsigned i = 0; i < cloud->size(); ++i )
+    {
+        const CCVector3* P = cloud->getPoint( i );
+        CCVector3d Pd( static_cast<double>( P->x ),
+                       static_cast<double>( P->y ),
+                       static_cast<double>( P->z ) );
+
+        // Syvyystesti: pisteen syvyys kameran katselusuunnassa
+        const double depth = ( Pd - eyePos ).dot( forward );
+        if ( depth < nearDist || depth > farDist )
+            continue;
+
+        // 2D-projektiotesti: projisoidaan piste kameran näkymään (corner GL)
+        CCVector3d P2D;
+        if ( !camera.project( Pd, P2D ) )
+            continue;
+
+        const CCVector2 p2(
+            static_cast<PointCoordinateType>( P2D.x ),
+            static_cast<PointCoordinateType>( P2D.y )
+        );
+
+        if ( !CCCoreLib::ManualSegmentationTools::isPointInsidePoly( p2, poly2D ) )
+            continue;
+
+        insideIndices.push_back( i );
+    }
+
+    if ( insideIndices.empty() )
+        return nullptr;
+
+    // ---- Luo uusi korostettu pistepilvi ----
+    ++s_highlightCounter;
+    ccPointCloud* highlighted = new ccPointCloud(
+        QString( "Highlighted_%1" ).arg( s_highlightCounter ) );
+
+    if ( !highlighted->reserve( static_cast<unsigned>( insideIndices.size() ) ) )
+    {
+        delete highlighted;
+        return nullptr;
+    }
+
+    for ( unsigned idx : insideIndices )
+        highlighted->addPoint( *cloud->getPoint( idx ) );
+
+    // Keltainen väri kaikille pisteille
+    if ( highlighted->reserveTheRGBTable() )
+    {
+        for ( std::size_t i = 0; i < insideIndices.size(); ++i )
+            highlighted->addColor( ccColor::Rgba( 255, 255, 0, 255 ) );
+        highlighted->showColors( true );
+    }
+
+    // Pistekoko: alkuperäisen pilven koko + 2 (min 3)
+    const unsigned char origSize = cloud->getPointSize();
+    highlighted->setPointSize( origSize > 0 ? origSize + 2 : 3 );
+
+    return highlighted;
 }

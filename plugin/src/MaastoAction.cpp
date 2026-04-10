@@ -206,6 +206,37 @@ namespace MaastoPlugin
                 if ( mesh )
                 {
                     m_appInterface->addToDB( mesh );
+
+                    // Korostaa prisман sisällä olevat pisteet
+                    if ( m_cloud != nullptr )
+                    {
+                        ccPointCloud *highlighted = VolumeBuilder::highlightPointsInsideVolume(
+                            m_polygonDrawer->getClosedVertices(),
+                            win,
+                            m_cloud,
+                            m_nearDistSpinBox->value(),
+                            m_farDistSpinBox->value()
+                        );
+                        if ( highlighted )
+                        {
+                            m_cloud->addChild( highlighted );
+                            m_appInterface->addToDB(
+                                highlighted,
+                                false,  // updateZoom
+                                false,  // autoExpandDBTree
+                                false,  // checkDimensions
+                                false   // autoRedraw
+                            );
+                        }
+                        else
+                        {
+                            m_appInterface->dispToConsole(
+                                "MaastoPlugin: prisman sisällä ei pisteitä",
+                                ccMainAppInterface::STD_CONSOLE_MESSAGE );
+                        }
+                    }
+
+                    m_appInterface->updateUI();
                     m_appInterface->refreshAll();
                 }
                 else
