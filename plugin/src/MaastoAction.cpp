@@ -6,6 +6,7 @@
 
 #include <QMainWindow>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QIcon>
@@ -120,12 +121,19 @@ namespace MaastoPlugin
                 applyColorField( fieldName );
             } );
 
-        // --- Toimintonappi icon.png:llä (alimmaisena) ---
+        // --- Napbirivi alimmaisena ---
+        QHBoxLayout *buttonRow = new QHBoxLayout();
+
+        QPushButton *polygonButton = new QPushButton( "Piirrä polygon", this );
+        buttonRow->addWidget( polygonButton );
+
         QPushButton *actionButton = new QPushButton( this );
         actionButton->setIcon( QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
         actionButton->setIconSize( QSize( 96, 96 ) );
         actionButton->setFixedSize( QSize( 128, 128 ) );
-        layout->addWidget( actionButton, 0, Qt::AlignCenter );
+        buttonRow->addWidget( actionButton );
+
+        layout->addLayout( buttonRow );
     }
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )
