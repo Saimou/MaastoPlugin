@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <vector>
+#include <array>
 
 class ccMainAppInterface;
 class ccGLWindowInterface;
@@ -18,31 +19,30 @@ class QPushButton;
 //   4. Oikea click     — sulkee polygonin, palautetaan normaali tila
 //   5. stopDrawing()   — siivoaa tilan (kutsutaan myös nappia togglaamalla OFF)
 //
-// Vanha polygon jää näkyviin kunnes uusi piirto aloitetaan.
+// Vanha polygon jää näkyviin kunnes ensimmäinen piste uuteen piirretään.
 
 class PolygonDrawer : public QObject
 {
     Q_OBJECT
 
 public:
+    // 2D-kulmapisteen tallennusmuoto: {x, y, z} centered GL koordinaateissa
+    using Point2D = std::array<float, 3>;
+
     explicit PolygonDrawer( ccMainAppInterface *app, QObject *parent = nullptr );
     ~PolygonDrawer() override;
 
-    // Aloittaa piirto-tilan. Hakee aktiivisen GL-ikkunan.
     void startDrawing();
-
-    // Lopettaa piirto-tilan ja palauttaa GL-ikkunan normaaliin tilaan.
-    // Kutsutaan kun nappi togglautuu pois tai polygon suljetaan.
     void stopDrawing();
 
     bool isDrawing() const { return m_drawing; }
 
-signals:
-    // Laukeaa kun polygon on suljettu oikealla hiiren napilla.
-    // vertices sisältää kulmat 2D-screenikoordinaateissa.
-    void polygonClosed();
+    // Palauttaa viimeksi suljetun polygonin 2D-kulmapisteet (centered GL coords).
+    // Tyhjä jos polygonia ei ole vielä suljettu.
+    const std::vector<Point2D>& getClosedVertices() const { return m_closedVertices; }
 
-    // Laukeaa kun piirto lopetetaan — nappi voidaan palauttaa OFF-tilaan.
+signals:
+    void polygonClosed();
     void drawingFinished();
 
 private slots:
@@ -57,13 +57,14 @@ private:
     ccMainAppInterface  *m_app;
     ccGLWindowInterface *m_glWindow;
 
-    // Nykyinen polygon jota piirretään (rubber-band)
     ccPointCloud        *m_vertices;
     ccPolyline          *m_polyline;
 
-    // Edellinen valmis polygon — jää näkyviin kunnes uusi aloitetaan
     ccPolyline          *m_previousPolyline;
-    ccGLWindowInterface *m_previousGLWindow;  // ikkuna johon m_previousPolyline on rekisteröity
+    ccGLWindowInterface *m_previousGLWindow;
+
+    // Suljetun polygonin 2D-kulmapisteet VolumeBuilder-käyttöön
+    std::vector<Point2D> m_closedVertices;
 
     bool                 m_drawing;
 };

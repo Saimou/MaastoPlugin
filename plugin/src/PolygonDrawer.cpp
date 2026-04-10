@@ -226,6 +226,17 @@ void PolygonDrawer::onRightClick( int /*x*/, int /*y*/ )
     m_glWindow->setInteractionMode( ccGLWindowInterface::MODE_TRANSFORM_CAMERA );
     m_glWindow->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
 
+    // Tallenna suljetun polygonin 2D-kulmapisteet VolumeBuilder-käyttöön
+    // (rubber-band piste on jo poistettu, joten kaikki pisteet ovat oikeita kulmia)
+    m_closedVertices.clear();
+    const unsigned closedN = m_vertices->size();
+    m_closedVertices.reserve( closedN );
+    for ( unsigned i = 0; i < closedN; ++i )
+    {
+        const CCVector3* p = m_vertices->getPoint( i );
+        m_closedVertices.push_back( { p->x, p->y, p->z } );
+    }
+
     // Siirrä valmis polygon "edellinen"-slottiin jotta se jää näkyviin.
     // Tallennetaan GL-ikkuna jotta destruktori osaa siivota sen myöhemmin.
     m_previousPolyline = m_polyline;

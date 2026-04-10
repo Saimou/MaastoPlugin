@@ -1,8 +1,10 @@
 #include "MaastoAction.h"
 #include "PolygonDrawer.h"
+#include "VolumeBuilder.h"
 
 #include "ccMainAppInterface.h"
 #include "ccHObjectCaster.h"
+#include "ccMesh.h"
 #include "ccPointCloud.h"
 
 #include <QMainWindow>
@@ -148,10 +150,33 @@ namespace MaastoPlugin
                 m_polygonDrawer->stopDrawing();
         } );
 
-        // Kun polygon suljetaan, aloitetaan uusi piirto automaattisesti
-        // Nappi pysyy ON-tilassa kunnes käyttäjä painaa sitä manuaalisesti
+        // Kun polygon suljetaan: rakenna 3D-kappale ja aloita uusi piirto
         connect( m_polygonDrawer, &PolygonDrawer::polygonClosed, this, [this]()
         {
+            // Rakenna prisma-mesh piirretystä polygonista
+            ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+            if ( win && !m_polygonDrawer->getClosedVertices().empty() )
+            {
+                ccMesh *mesh = VolumeBuilder::build(
+                    m_polygonDrawer->getClosedVertices(),
+                    win,
+                    10.0,   // nearDist — myöhemmin SpinBox
+                    50.0    // farDist  — myöhemmin SpinBox
+                );
+                if ( mesh )
+                {
+                    m_appInterface->addToDB( mesh );
+                    m_appInterface->refreshAll();
+                }
+                else
+                {
+                    m_appInterface->dispToConsole(
+                        "MaastoPlugin: 3D-kappaleen luonti epäonnistui",
+                        ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+                }
+            }
+
+            // Aloita uusi piirto automaattisesti
             m_polygonDrawer->startDrawing();
         } );
     }
