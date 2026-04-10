@@ -53,6 +53,8 @@ private slots:
 private:
     void resetCurrentPolygon();
     void disconnectFromWindow();
+    // Poistaa valmiin polygonin GL-ikkunasta (kutsutaan kun kameraa liikutetaan)
+    void clearPreviousPolygon();
 
     ccMainAppInterface  *m_app;
     ccGLWindowInterface *m_glWindow;

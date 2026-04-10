@@ -16,6 +16,10 @@ PolygonDrawer::PolygonDrawer( ccMainAppInterface *app, QObject *parent )
     , m_previousGLWindow( nullptr )
     , m_drawing( false )
 {
+    // Kytketään kamera-signaalit heti konstruktorissa — näin valmis polygon
+    // häviää aina kun kameraa liikutetaan, myös piirtomoodin ulkopuolella.
+    // Signaali tulee aktiiviselta GL-ikkunalta, mutta koska ikkuna ei ole
+    // vielä tiedossa, kytketään se startDrawing():ssa.
 }
 
 PolygonDrawer::~PolygonDrawer()
@@ -79,6 +83,12 @@ void PolygonDrawer::startDrawing()
     connect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseMoved,
              this, &PolygonDrawer::onMouseMove );
 
+    // Kytke kamera-signaalit — valmis polygon häviää kun kameraa liikutetaan
+    connect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::viewMatRotated,
+             this, [this]( const ccGLMatrixd& ) { clearPreviousPolygon(); } );
+    connect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseWheelRotated,
+             this, [this]( float ) { clearPreviousPolygon(); } );
+
     m_drawing = true;
 
     m_app->dispToConsole( "MaastoPlugin: Piirrä polygon — vasen click lisää kulma, oikea sulkee",
@@ -124,6 +134,23 @@ void PolygonDrawer::disconnectFromWindow()
                     this, &PolygonDrawer::onRightClick );
         disconnect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseMoved,
                     this, &PolygonDrawer::onMouseMove );
+        // Katkaise myös kamera-signaalit (lambdat disconnectoidaan objektin kautta)
+        disconnect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::viewMatRotated,
+                    this, nullptr );
+        disconnect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseWheelRotated,
+                    this, nullptr );
+    }
+}
+
+void PolygonDrawer::clearPreviousPolygon()
+{
+    if ( m_previousPolyline && m_previousGLWindow )
+    {
+        m_previousGLWindow->removeFromOwnDB( m_previousPolyline );
+        m_previousGLWindow->redraw( true, false );
+        delete m_previousPolyline;
+        m_previousPolyline = nullptr;
+        m_previousGLWindow = nullptr;
     }
 }
 

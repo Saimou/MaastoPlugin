@@ -81,6 +81,7 @@ namespace MaastoPlugin
         , m_cloud( nullptr )
         , m_valuesComboBox( nullptr )
         , m_listWidget( nullptr )
+        , m_selectAllButton( nullptr )
         , m_targetClassComboBox( nullptr )
         , m_colorComboBox( nullptr )
         , m_updatingCloud( false )
@@ -100,8 +101,16 @@ namespace MaastoPlugin
         m_valuesComboBox = new QComboBox( this );
         layout->addWidget( m_valuesComboBox );
 
-        // --- Arvot (checkbox-monivalinta) ---
-        layout->addWidget( new QLabel( "Arvot:", this ) );
+        // --- Arvot (checkbox-monivalinta) + toggle-nappi ---
+        {
+            QHBoxLayout *arvoHeader = new QHBoxLayout();
+            arvoHeader->addWidget( new QLabel( "Arvot:", this ) );
+            m_selectAllButton = new QPushButton( "Valitse kaikki", this );
+            m_selectAllButton->setCheckable( true );
+            m_selectAllButton->setFixedHeight( 22 );
+            arvoHeader->addWidget( m_selectAllButton );
+            layout->addLayout( arvoHeader );
+        }
         m_listWidget = new QListWidget( this );
         m_listWidget->setMinimumHeight( 150 );
         layout->addWidget( m_listWidget );
@@ -111,7 +120,7 @@ namespace MaastoPlugin
         m_targetClassComboBox = new QComboBox( this );
         layout->addWidget( m_targetClassComboBox );
 
-        // --- Värjää pisteet ---
+        // --- Värjää pisteet (RGB + scalar-kentät) ---
         layout->addWidget( new QLabel( "Värjää pisteet:", this ) );
         m_colorComboBox = new QComboBox( this );
         layout->addWidget( m_colorComboBox );
@@ -129,6 +138,28 @@ namespace MaastoPlugin
             [this]( const QString &fieldName )
             {
                 applyColorField( fieldName );
+            } );
+
+        // Toggle: Valitse kaikki / Poista valinnat
+        connect( m_selectAllButton, &QPushButton::toggled,
+            [this]( bool checked )
+            {
+                m_selectAllButton->setText( checked ? "Poista valinnat" : "Valitse kaikki" );
+                const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
+                m_listWidget->blockSignals( true );
+                for ( int i = 0; i < m_listWidget->count(); ++i )
+                    m_listWidget->item( i )->setCheckState( state );
+                m_listWidget->blockSignals( false );
+            } );
+
+        // Jos käyttäjä klikkaa yksittäistä riviä, palautetaan nappi OFF-tilaan
+        connect( m_listWidget, &QListWidget::itemChanged,
+            [this]( QListWidgetItem* )
+            {
+                m_selectAllButton->blockSignals( true );
+                m_selectAllButton->setChecked( false );
+                m_selectAllButton->setText( "Valitse kaikki" );
+                m_selectAllButton->blockSignals( false );
             } );
 
         // --- Napbirivi alimmaisena ---
@@ -282,7 +313,7 @@ namespace MaastoPlugin
 
         populateComboBox( m_valuesComboBox, keepValues );
         populateTargetClassComboBox( keepTargetClass );
-        populateComboBox( m_colorComboBox, keepColor );
+        populateColorComboBox( keepColor );
 
         m_updatingCloud = false;
     }
@@ -367,25 +398,52 @@ namespace MaastoPlugin
         m_targetClassComboBox->setCurrentIndex( keepIdx >= 0 ? keepIdx : 0 );
     }
 
+    void MaastoDialog::populateColorComboBox( const QString &keepField )
+    {
+        m_colorComboBox->blockSignals( true );
+        m_colorComboBox->clear();
+
+        // RGB aina ensimmäisenä
+        m_colorComboBox->addItem( "RGB" );
+
+        // Scalar-kentät aakkosjärjestyksessä
+        const QStringList names = getScalarFieldNames( m_cloud );
+        m_colorComboBox->addItems( names );
+
+        m_colorComboBox->blockSignals( false );
+
+        // Säilytä edellinen valinta
+        int keepIdx = m_colorComboBox->findText( keepField );
+        m_colorComboBox->setCurrentIndex( keepIdx >= 0 ? keepIdx : 0 );
+
+        applyColorField( m_colorComboBox->currentText() );
+    }
+
     void MaastoDialog::applyColorField( const QString &fieldName )
     {
         if ( m_cloud == nullptr || fieldName.isEmpty() )
             return;
 
-        int idx = m_cloud->getScalarFieldIndexByName( fieldName.toStdString().c_str() );
-        if ( idx < 0 )
-            return;
+        if ( fieldName == "RGB" )
+        {
+            // RGB-väritys — sama kuin Properties → Colors → RGB
+            m_cloud->showColors( true );
+            m_cloud->showSF( false );
+        }
+        else
+        {
+            // SF-väritys
+            int idx = m_cloud->getScalarFieldIndexByName( fieldName.toStdString().c_str() );
+            if ( idx < 0 )
+                return;
 
-        // Aseta scalar field aktiiviseksi ja kytke SF-väritys päälle.
-        // showColors(false) tarvitaan jotta Properties-ikkunan Colors vaihtuu
-        // RGB:stä Scalar field -tilaan (sama mitä Properties-paneeli tekee)
-        m_cloud->setCurrentDisplayedScalarField( idx );
-        m_cloud->showColors( false );
-        m_cloud->showSF( true );
+            m_cloud->setCurrentDisplayedScalarField( idx );
+            m_cloud->showColors( false );
+            m_cloud->showSF( true );
+        }
+
         m_cloud->prepareDisplayForRefresh();
 
-        // updateUI() päivittää Properties-paneelin reaaliajassa.
-        // m_updatingCloud-lippu estää sen triggeröimän onNewSelection()-silmukan.
         m_updatingCloud = true;
         m_appInterface->updateUI();
         m_updatingCloud = false;
