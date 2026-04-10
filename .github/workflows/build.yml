@@ -107,9 +107,16 @@ jobs:
           channels: conda-forge
           channel-priority: strict
 
-      - name: Install eigen, zlib and laszip via conda
+      - name: Install eigen and zlib via conda
         shell: bash -l {0}
         run: mamba install -y eigen zlib laszip
+
+      - name: Download LASzip headers (v3.4.3)
+        shell: bash -l {0}
+        run: |
+          git clone --depth 1 --branch 3.4.3 https://github.com/LASzip/LASzip.git laszip-src
+          # Headerit ovat dll/-kansiossa (laszip_api.h jne.)
+          echo "LASZIP_INCLUDE_DIR=$PWD/laszip-src/dll" >> $GITHUB_ENV
 
       - name: Configure MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -130,8 +137,8 @@ jobs:
           export CONDA_LIB_DIR="$CONDA_PREFIX/Library"
           export EIGEN_ROOT_DIR="$CONDA_LIB_DIR/include/eigen3"
           # FindLASzip.cmake ei käytä CMAKE_PREFIX_PATH:ia — asetetaan polut suoraan
+          # LASZIP_INCLUDE_DIR tulee LASzip-lähdekoodista (headerit dll/-kansiossa)
           export LASZIP_LIBRARY="$CONDA_LIB_DIR/lib/laszip3.lib"
-          export LASZIP_INCLUDE_DIR="$CONDA_LIB_DIR/include"
           export LASZIP_DLL="$CONDA_LIB_DIR/bin/laszip3.dll"
           cmake \
             -B CloudCompare/build \
