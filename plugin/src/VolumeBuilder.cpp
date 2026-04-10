@@ -96,6 +96,16 @@ ccMesh* VolumeBuilder::build( const std::vector<PolygonDrawer::Point2D>& polygon
     for ( unsigned i = 0; i < N; ++i )
         cloud->addPoint( CCVector3::fromArray( farPts[i].u ) );
 
+    // ---- Vertex-värit alpha-läpinäkyvyydellä ----
+    // alpha 100/255 ≈ 40% läpinäkyvä harmaa
+    if ( cloud->reserveTheRGBTable() )
+    {
+        const ColorCompType r = 200, g = 200, b = 200, a = 100;
+        for ( unsigned i = 0; i < 2 * N; ++i )
+            cloud->addColor( r, g, b, a );
+        cloud->showColors( true );
+    }
+
     // ---- Luo mesh ----
     // Trianglit: etukansi (N-2) + takakansi (N-2) + seinät (N*2)
     const unsigned triCount = ( N - 2 ) * 2 + N * 2;
@@ -127,6 +137,7 @@ ccMesh* VolumeBuilder::build( const std::vector<PolygonDrawer::Point2D>& polygon
 
     // ---- Normaaleille ----
     mesh->computeNormals( true );
+    mesh->showColors( true );
 
     // ---- Nimi ----
     ++s_counter;
