@@ -226,10 +226,11 @@ void PolygonDrawer::onRightClick( int /*x*/, int /*y*/ )
     m_glWindow->setInteractionMode( ccGLWindowInterface::MODE_TRANSFORM_CAMERA );
     m_glWindow->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
 
-    // Tallenna suljetun polygonin 2D-kulmapisteet VolumeBuilder-käyttöön
-    // (rubber-band piste on jo poistettu, joten kaikki pisteet ovat oikeita kulmia)
+    // Tallenna suljetun polygonin 2D-kulmapisteet VolumeBuilder-käyttöön.
+    // m_vertices->size() - 1 jättää rubber-band pisteen pois (se on viimeinen
+    // piste ja osoittaa hiiren sijaintiin oikeaa nappia painaessa).
     m_closedVertices.clear();
-    const unsigned closedN = m_vertices->size();
+    const unsigned closedN = m_vertices->size() - 1;
     m_closedVertices.reserve( closedN );
     for ( unsigned i = 0; i < closedN; ++i )
     {
