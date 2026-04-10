@@ -155,7 +155,8 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
     ccGLWindowInterface*                        glWindow,
     ccPointCloud*                               cloud,
     double                                      nearDist,
-    double                                      farDist )
+    double                                      farDist,
+    std::vector<unsigned>*                      outIndices )
 {
     static int s_highlightCounter = 0;
 
@@ -226,6 +227,14 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
 
     if ( insideIndices.empty() )
         return nullptr;
+
+    // Täytä outIndices jos pyydetty (luokittelua varten)
+    if ( outIndices )
+    {
+        outIndices->insert( outIndices->end(),
+                            insideIndices.begin(),
+                            insideIndices.end() );
+    }
 
     // ---- Luo uusi korostettu pistepilvi ----
     ++s_highlightCounter;

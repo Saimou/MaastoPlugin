@@ -6,6 +6,7 @@
 #include "ccHObjectCaster.h"
 #include "ccMesh.h"
 #include "ccPointCloud.h"
+#include "ccHObject.h"
 
 #include <QMainWindow>
 #include <QVBoxLayout>
@@ -145,6 +146,12 @@ namespace MaastoPlugin
 
         layout->addLayout( buttonRow );
 
+        // Iso nappi käynnistää luokittelun
+        connect( actionButton, &QPushButton::clicked, this, [this]()
+        {
+            performClassification();
+        } );
+
         // --- Etäisyysasetukset ---
         QFormLayout *distForm = new QFormLayout();
         distForm->setContentsMargins( 0, 4, 0, 4 );
@@ -160,7 +167,7 @@ namespace MaastoPlugin
         m_farDistSpinBox = new QDoubleSpinBox( this );
         m_farDistSpinBox->setRange( 0.1, 9999.0 );
         m_farDistSpinBox->setSingleStep( 0.5 );
-        m_farDistSpinBox->setValue( 50.0 );
+        m_farDistSpinBox->setValue( 1000.0 );
         m_farDistSpinBox->setSuffix( " m" );
         m_farDistSpinBox->setDecimals( 1 );
         distForm->addRow( "Pisin etäisyys:", m_farDistSpinBox );
@@ -206,19 +213,27 @@ namespace MaastoPlugin
                 if ( mesh )
                 {
                     m_appInterface->addToDB( mesh );
+                    m_volumeObjects.push_back( mesh );
 
-                    // Korostaa prisман sisällä olevat pisteet
+                    // Korostaa prisman sisällä olevat pisteet
                     if ( m_cloud != nullptr )
                     {
+                        std::vector<unsigned> indices;
                         ccPointCloud *highlighted = VolumeBuilder::highlightPointsInsideVolume(
                             m_polygonDrawer->getClosedVertices(),
                             win,
                             m_cloud,
                             m_nearDistSpinBox->value(),
-                            m_farDistSpinBox->value()
+                            m_farDistSpinBox->value(),
+                            &indices
                         );
                         if ( highlighted )
                         {
+                            // Lisää uudet indeksit listaan (akkumuloidaan useammasta prismasta)
+                            m_highlightedIndices.insert(
+                                m_highlightedIndices.end(),
+                                indices.begin(), indices.end() );
+
                             m_cloud->addChild( highlighted );
                             m_appInterface->addToDB(
                                 highlighted,
@@ -227,6 +242,7 @@ namespace MaastoPlugin
                                 false,  // checkDimensions
                                 false   // autoRedraw
                             );
+                            m_volumeObjects.push_back( highlighted );
                         }
                         else
                         {
@@ -366,6 +382,91 @@ namespace MaastoPlugin
         m_appInterface->updateUI();
         m_updatingCloud = false;
 
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // performClassification
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::performClassification()
+    {
+        if ( !m_cloud || m_highlightedIndices.empty() )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: ei luokiteltavia pisteitä — piirrä ensin polygon",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        const QString sfName    = m_valuesComboBox->currentText();
+        const QString targetStr = m_targetClassComboBox->currentText();
+        if ( sfName.isEmpty() || targetStr.isEmpty() )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: valitse scalar field ja kohdeluokka",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        int sfIdx = m_cloud->getScalarFieldIndexByName( sfName.toStdString().c_str() );
+        if ( sfIdx < 0 )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: scalar fieldiä ei löydy",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+        CCCoreLib::ScalarField *sf = m_cloud->getScalarField( sfIdx );
+        if ( !sf ) return;
+
+        // Kerää valitut arvot Arvot-listasta (☑-rivit)
+        QSet<float> selectedValues;
+        for ( int i = 0; i < m_listWidget->count(); ++i )
+        {
+            if ( m_listWidget->item( i )->checkState() == Qt::Checked )
+                selectedValues.insert( m_listWidget->item( i )->text().toFloat() );
+        }
+
+        if ( selectedValues.isEmpty() )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: valitse vähintään yksi arvo Arvot-listasta",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        const ScalarType targetValue = static_cast<ScalarType>( targetStr.toFloat() );
+
+        // Luokittele: vain prisman sisällä olevat pisteet joilla on valittu arvo
+        unsigned count = 0;
+        for ( unsigned idx : m_highlightedIndices )
+        {
+            if ( idx >= m_cloud->size() )
+                continue;
+            const float val = static_cast<float>( sf->getValue( idx ) );
+            if ( selectedValues.contains( val ) )
+            {
+                sf->setValue( idx, targetValue );
+                ++count;
+            }
+        }
+
+        sf->computeMinAndMax();
+        m_cloud->prepareDisplayForRefresh();
+
+        // Poista 3D-kappaleet ja highlight-pilvet DB:stä
+        for ( ccHObject *obj : m_volumeObjects )
+            m_appInterface->removeFromDB( obj, true );
+        m_volumeObjects.clear();
+        m_highlightedIndices.clear();
+
+        m_appInterface->dispToConsole(
+            QString( "MaastoPlugin: luokiteltu %1 pistettä → %2" )
+                .arg( count ).arg( targetStr ),
+            ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+        m_appInterface->updateUI();
         m_appInterface->refreshAll();
     }
 
