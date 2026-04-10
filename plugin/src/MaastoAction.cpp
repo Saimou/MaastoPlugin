@@ -330,6 +330,12 @@ namespace MaastoPlugin
 
     void MaastoDialog::populateValueList( const QString &fieldName )
     {
+        // Tallenna nykyiset valinnat ennen tyhjennystä
+        QSet<QString> checkedValues;
+        for ( int i = 0; i < m_listWidget->count(); ++i )
+            if ( m_listWidget->item( i )->checkState() == Qt::Checked )
+                checkedValues.insert( m_listWidget->item( i )->text() );
+
         m_listWidget->clear();
 
         const QStringList values = getScalarFieldValues( m_cloud, fieldName );
@@ -337,7 +343,9 @@ namespace MaastoPlugin
         {
             QListWidgetItem *item = new QListWidgetItem( val, m_listWidget );
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
-            item->setCheckState( Qt::Unchecked );
+            // Palauta valinta jos arvo oli valittuna aiemmin
+            item->setCheckState( checkedValues.contains( val )
+                                 ? Qt::Checked : Qt::Unchecked );
         }
     }
 
