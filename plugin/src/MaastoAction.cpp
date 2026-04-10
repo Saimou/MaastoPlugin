@@ -7,6 +7,8 @@
 #include <QMainWindow>
 #include <QVBoxLayout>
 #include <QLabel>
+#include <QPushButton>
+#include <QIcon>
 #include <QSet>
 #include <QStringList>
 #include <algorithm>
@@ -117,6 +119,13 @@ namespace MaastoPlugin
             {
                 applyColorField( fieldName );
             } );
+
+        // --- Toimintonappi icon.png:llä (alimmaisena) ---
+        QPushButton *actionButton = new QPushButton( this );
+        actionButton->setIcon( QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
+        actionButton->setIconSize( QSize( 48, 48 ) );
+        actionButton->setFixedSize( QSize( 64, 64 ) );
+        layout->addWidget( actionButton, 0, Qt::AlignCenter );
     }
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )
