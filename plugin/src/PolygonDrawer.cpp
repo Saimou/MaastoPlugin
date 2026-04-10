@@ -49,17 +49,8 @@ void PolygonDrawer::startDrawing()
         return;
     }
 
-    // Poista edellinen valmis polygon GL-ikkunasta
-    if ( m_previousPolyline )
-    {
-        if ( m_previousGLWindow )
-            m_previousGLWindow->removeFromOwnDB( m_previousPolyline );
-        delete m_previousPolyline;
-        m_previousPolyline = nullptr;
-        m_previousGLWindow = nullptr;
-    }
-
     // Luo uusi polygon-rakenne
+    // Edellinen polygon poistetaan vasta kun ensimmäinen piste piirretään
     m_vertices = new ccPointCloud( "MaastoPolygon_verts" );
     m_vertices->setEnabled( false );   // ei renderöidä pistepilvenä
 
@@ -151,8 +142,17 @@ void PolygonDrawer::onLeftClick( int x, int y )
 
     if ( vertCount == 0 )
     {
-        // Ensimmäinen kulma: lisätään kaksi pistettä
-        // — toinen on rubber-band piste joka seuraa kursoria
+        // Ensimmäinen kulma — poista edellinen polygon vasta nyt
+        if ( m_previousPolyline )
+        {
+            if ( m_previousGLWindow )
+                m_previousGLWindow->removeFromOwnDB( m_previousPolyline );
+            delete m_previousPolyline;
+            m_previousPolyline = nullptr;
+            m_previousGLWindow = nullptr;
+        }
+
+        // Lisätään kaksi pistettä — toinen on rubber-band piste
         if ( !m_vertices->reserve( 2 ) )
             return;
         m_vertices->addPoint( P );   // kiinteä kulma
