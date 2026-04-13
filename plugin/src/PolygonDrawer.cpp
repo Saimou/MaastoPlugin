@@ -83,12 +83,6 @@ void PolygonDrawer::startDrawing()
     connect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseMoved,
              this, &PolygonDrawer::onMouseMove );
 
-    // Kytke kamera-signaalit — valmis polygon häviää kun kameraa liikutetaan
-    connect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::viewMatRotated,
-             this, [this]( const ccGLMatrixd& ) { clearPreviousPolygon(); } );
-    connect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseWheelRotated,
-             this, [this]( float ) { clearPreviousPolygon(); } );
-
     m_drawing = true;
 
     m_app->dispToConsole( "MaastoPlugin: Piirrä polygon — vasen click lisää kulma, oikea sulkee",
@@ -134,11 +128,8 @@ void PolygonDrawer::disconnectFromWindow()
                     this, &PolygonDrawer::onRightClick );
         disconnect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseMoved,
                     this, &PolygonDrawer::onMouseMove );
-        // Katkaise myös kamera-signaalit (lambdat disconnectoidaan objektin kautta)
-        disconnect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::viewMatRotated,
-                    this, nullptr );
-        disconnect( m_glWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseWheelRotated,
-                    this, nullptr );
+        // Huom: kamera-signaalit kytketään m_previousGLWindow:iin onRightClick():ssä
+        // joten niitä ei tarvitse katkaista tässä m_glWindow:sta
     }
 }
 
@@ -146,6 +137,14 @@ void PolygonDrawer::clearPreviousPolygon()
 {
     if ( m_previousPolyline && m_previousGLWindow )
     {
+        // Katkaise kamera-signaalit ennen polygonin poistoa
+        disconnect( m_previousGLWindow->signalEmitter(),
+                    &ccGLWindowSignalEmitter::viewMatRotated,
+                    this, nullptr );
+        disconnect( m_previousGLWindow->signalEmitter(),
+                    &ccGLWindowSignalEmitter::mouseWheelRotated,
+                    this, nullptr );
+
         m_previousGLWindow->removeFromOwnDB( m_previousPolyline );
         m_previousGLWindow->redraw( true, false );
         delete m_previousPolyline;
@@ -266,11 +265,16 @@ void PolygonDrawer::onRightClick( int /*x*/, int /*y*/ )
     }
 
     // Siirrä valmis polygon "edellinen"-slottiin jotta se jää näkyviin.
-    // Tallennetaan GL-ikkuna jotta destruktori osaa siivota sen myöhemmin.
     m_previousPolyline = m_polyline;
     m_previousGLWindow = m_glWindow;  // ← tallennetaan ennen nollausta
     m_polyline         = nullptr;
     m_vertices         = nullptr;     // omistajuus on polylinella (addChild)
+
+    // Kytke kamera-signaalit previousGLWindow:iin — polygon häviää kun kameraa liikutetaan
+    connect( m_previousGLWindow->signalEmitter(), &ccGLWindowSignalEmitter::viewMatRotated,
+             this, [this]( const ccGLMatrixd& ) { clearPreviousPolygon(); } );
+    connect( m_previousGLWindow->signalEmitter(), &ccGLWindowSignalEmitter::mouseWheelRotated,
+             this, [this]( float ) { clearPreviousPolygon(); } );
 
     m_glWindow = nullptr;
     m_drawing  = false;
