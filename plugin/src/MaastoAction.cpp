@@ -716,6 +716,13 @@ namespace MaastoPlugin
 
     void MaastoDialog::populateVisibilityList( const QString &fieldName )
     {
+        // Tallenna nykyiset pois-valinnat ennen tyhjennystä
+        // (säilytetään käyttäjän tekemät valinnat updateCloud():n kutsuessa)
+        QSet<QString> uncheckedValues;
+        for ( int i = 0; i < m_visibilityListWidget->count(); ++i )
+            if ( m_visibilityListWidget->item( i )->checkState() == Qt::Unchecked )
+                uncheckedValues.insert( m_visibilityListWidget->item( i )->text() );
+
         m_updatingVisibility = true;
         m_visibilityListWidget->clear();
 
@@ -723,29 +730,40 @@ namespace MaastoPlugin
         if ( fieldName == "RGB" || m_cloud == nullptr || fieldName.isEmpty() )
         {
             m_updatingVisibility = false;
-            // Palauta kaikki näkyviin jos lista on tyhjä
             resetVisibility();
             return;
         }
 
         const QStringList values = getScalarFieldValues( m_cloud, fieldName );
+        bool allChecked = uncheckedValues.isEmpty();
+
         for ( const QString &val : values )
         {
             QListWidgetItem *item = new QListWidgetItem( val, m_visibilityListWidget );
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
-            item->setCheckState( Qt::Checked );  // oletuksena kaikki valittuna
+            // Palauta edellinen valinta jos se oli pois-valittuna
+            item->setCheckState( uncheckedValues.contains( val )
+                                 ? Qt::Unchecked : Qt::Checked );
         }
 
-        // Päivitä toggle-napin tila (kaikki valittuna → nappi ON)
+        // Päivitä toggle-napin tila
         m_selectAllVisButton->blockSignals( true );
-        m_selectAllVisButton->setChecked( true );
-        m_selectAllVisButton->setText( "Poista valinnat" );
+        if ( allChecked )
+        {
+            m_selectAllVisButton->setChecked( true );
+            m_selectAllVisButton->setText( "Poista valinnat" );
+        }
+        else
+        {
+            m_selectAllVisButton->setChecked( false );
+            m_selectAllVisButton->setText( "Valitse kaikki" );
+        }
         m_selectAllVisButton->blockSignals( false );
 
         m_updatingVisibility = false;
 
-        // Kaikki valittuna → ei tarvita visibility maskia
-        resetVisibility();
+        // Päivitä visibility-tila valintojen mukaan
+        applyVisibilityFilter();
     }
 
     // ----------------------------------------------------------------
