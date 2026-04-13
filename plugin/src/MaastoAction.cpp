@@ -687,16 +687,18 @@ namespace MaastoPlugin
         if ( coloredKeys.isEmpty() )
             return;
 
-        const double minVal = static_cast<double>( coloredKeys.first() );
-        const double maxVal = static_cast<double>( coloredKeys.last() );
-        const double range  = maxVal - minVal;
+        // Käytetään SF:n omaa min/max saturation rangena jotta normalisointi
+        // vastaa värikartan suhteellisia koordinaatteja (normalize() → 0..1)
+        const ScalarType sfMin   = sf->getMin();
+        const ScalarType sfMax   = sf->getMax();
+        const double     sfRange = static_cast<double>( sfMax - sfMin );
 
-        // Luo uusi custom värikartta
+        // Luo relatiivinen värikartta — askeleet lasketaan SF:n min/max suhteen
         ccColorScale::Shared scale = ccColorScale::Create( "MaastoPTC" );
 
-        if ( range < 1e-6 )
+        if ( sfRange < 1e-6 )
         {
-            // Kaikki luokat samassa arvossa — yksi väri
+            // Kaikki pisteet samassa arvossa — yksi väri
             const QColor &color = m_classDefinitions[ coloredKeys.first() ].color;
             scale->insert( ccColorScaleElement( 0.0, color ), false );
             scale->insert( ccColorScaleElement( 1.0, color ), false );
@@ -704,23 +706,25 @@ namespace MaastoPlugin
         }
         else
         {
-            // Absoluuttinen välikartta: jokainen luokka saa oman värinsä
-            scale->setAbsolute( minVal, maxVal );
-
             for ( int i = 0; i < coloredKeys.size(); ++i )
             {
                 const int    key    = coloredKeys[i];
-                const double relPos = ( static_cast<double>( key ) - minVal ) / range;
+                const double relPos = qBound( 0.0,
+                    ( static_cast<double>( key ) - static_cast<double>( sfMin ) ) / sfRange,
+                    1.0 );
                 const QColor &color = m_classDefinitions[key].color;
 
-                // Lisätään askel juuri ennen seuraavaa luokkaa (estää interpolaation)
+                // Askel juuri ennen tätä luokkaa estää interpolaation
                 if ( i > 0 )
                 {
-                    const int    prevKey    = coloredKeys[i - 1];
-                    const double prevRelPos = ( static_cast<double>( prevKey ) - minVal ) / range;
-                    const double eps        = ( relPos - prevRelPos ) * 0.001;
-                    scale->insert( ccColorScaleElement(
-                        relPos - eps, m_classDefinitions[prevKey].color ), false );
+                    const int    prevKey = coloredKeys[i - 1];
+                    const double prevRel = qBound( 0.0,
+                        ( static_cast<double>( prevKey ) - static_cast<double>( sfMin ) ) / sfRange,
+                        1.0 );
+                    const double eps = ( relPos - prevRel ) * 0.001;
+                    if ( eps > 1e-9 )
+                        scale->insert( ccColorScaleElement(
+                            relPos - eps, m_classDefinitions[prevKey].color ), false );
                 }
 
                 scale->insert( ccColorScaleElement( relPos, color ), false );
@@ -729,10 +733,10 @@ namespace MaastoPlugin
             scale->update();
         }
 
-        // Aseta värikartta scalar fieldille
+        // Aseta värikartta ja saturation range SF:n min/max:ksi
         sf->setColorScale( scale );
-        sf->setSaturationStart( static_cast<ScalarType>( minVal ) );
-        sf->setSaturationStop(  static_cast<ScalarType>( maxVal ) );
+        sf->setSaturationStart( sfMin );
+        sf->setSaturationStop(  sfMax );
 
         // Aktivoi SF-väritys
         m_cloud->setCurrentDisplayedScalarField( sfIdx );
