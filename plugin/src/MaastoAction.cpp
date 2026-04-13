@@ -7,6 +7,8 @@
 #include "ccHObjectCaster.h"
 #include "ccMesh.h"
 #include "ccPointCloud.h"
+#include "ccScalarField.h"
+#include "ccColorScale.h"
 #include "ccHObject.h"
 #include "ccColorTypes.h"
 
@@ -129,6 +131,11 @@ namespace MaastoPlugin
             {
                 m_classDefinitions = ClassDefinitionReader::read( file );
                 populateValueList( m_valuesComboBox->currentText() );
+
+                // Jos Pisteiden väritys on Classification, päivitä värit .ptc:stä
+                const QString colorField = m_colorComboBox->currentText();
+                if ( colorField.compare( "Classification", Qt::CaseInsensitive ) == 0 )
+                    applyPtcColorScale();
             }
         } );
 
@@ -619,10 +626,22 @@ namespace MaastoPlugin
             // RGB-väritys — sama kuin Properties → Colors → RGB
             m_cloud->showColors( true );
             m_cloud->showSF( false );
+
+            m_cloud->prepareDisplayForRefresh();
+            m_updatingCloud = true;
+            m_appInterface->updateUI();
+            m_updatingCloud = false;
+            m_appInterface->refreshAll();
+        }
+        else if ( fieldName.compare( "Classification", Qt::CaseInsensitive ) == 0
+                  && !m_classDefinitions.isEmpty() )
+        {
+            // .ptc-värit — käytetään custom color scale:a
+            applyPtcColorScale();
         }
         else
         {
-            // SF-väritys
+            // Normaali SF-väritys
             int idx = m_cloud->getScalarFieldIndexByName( fieldName.toStdString().c_str() );
             if ( idx < 0 )
                 return;
@@ -630,14 +649,100 @@ namespace MaastoPlugin
             m_cloud->setCurrentDisplayedScalarField( idx );
             m_cloud->showColors( false );
             m_cloud->showSF( true );
+
+            m_cloud->prepareDisplayForRefresh();
+            m_updatingCloud = true;
+            m_appInterface->updateUI();
+            m_updatingCloud = false;
+            m_appInterface->refreshAll();
+        }
+    }
+
+    void MaastoDialog::applyPtcColorScale()
+    {
+        if ( !m_cloud || m_classDefinitions.isEmpty() )
+            return;
+
+        const QString sfName = m_colorComboBox->currentText();
+        if ( sfName.compare( "Classification", Qt::CaseInsensitive ) != 0 )
+            return;
+
+        int sfIdx = m_cloud->getScalarFieldIndexByName( sfName.toStdString().c_str() );
+        if ( sfIdx < 0 )
+            return;
+
+        ccScalarField *sf = static_cast<ccScalarField*>( m_cloud->getScalarField( sfIdx ) );
+        if ( !sf )
+            return;
+
+        // Kerää luokat joilla on väri, järjestä numerojärjestykseen
+        QList<int> sortedKeys = m_classDefinitions.keys();
+        std::sort( sortedKeys.begin(), sortedKeys.end() );
+
+        QList<int> coloredKeys;
+        for ( int key : sortedKeys )
+            if ( m_classDefinitions[key].color.isValid() )
+                coloredKeys << key;
+
+        if ( coloredKeys.isEmpty() )
+            return;
+
+        const double minVal = static_cast<double>( coloredKeys.first() );
+        const double maxVal = static_cast<double>( coloredKeys.last() );
+        const double range  = maxVal - minVal;
+
+        // Luo uusi custom värikartta
+        ccColorScale::Shared scale = ccColorScale::Create( "MaastoPTC" );
+
+        if ( range < 1e-6 )
+        {
+            // Kaikki luokat samassa arvossa — yksi väri
+            const QColor &color = m_classDefinitions[ coloredKeys.first() ].color;
+            scale->insert( ccColorScaleElement( 0.0, color ), false );
+            scale->insert( ccColorScaleElement( 1.0, color ), false );
+            scale->update();
+        }
+        else
+        {
+            // Absoluuttinen välikartta: jokainen luokka saa oman värinsä
+            scale->setAbsolute( minVal, maxVal );
+
+            for ( int i = 0; i < coloredKeys.size(); ++i )
+            {
+                const int    key    = coloredKeys[i];
+                const double relPos = ( static_cast<double>( key ) - minVal ) / range;
+                const QColor &color = m_classDefinitions[key].color;
+
+                // Lisätään askel juuri ennen seuraavaa luokkaa (estää interpolaation)
+                if ( i > 0 )
+                {
+                    const int    prevKey    = coloredKeys[i - 1];
+                    const double prevRelPos = ( static_cast<double>( prevKey ) - minVal ) / range;
+                    const double eps        = ( relPos - prevRelPos ) * 0.001;
+                    scale->insert( ccColorScaleElement(
+                        relPos - eps, m_classDefinitions[prevKey].color ), false );
+                }
+
+                scale->insert( ccColorScaleElement( relPos, color ), false );
+            }
+
+            scale->update();
         }
 
+        // Aseta värikartta scalar fieldille
+        sf->setColorScale( scale );
+        sf->setSaturationStart( static_cast<ScalarType>( minVal ) );
+        sf->setSaturationStop(  static_cast<ScalarType>( maxVal ) );
+
+        // Aktivoi SF-väritys
+        m_cloud->setCurrentDisplayedScalarField( sfIdx );
+        m_cloud->showColors( false );
+        m_cloud->showSF( true );
         m_cloud->prepareDisplayForRefresh();
 
         m_updatingCloud = true;
         m_appInterface->updateUI();
         m_updatingCloud = false;
-
         m_appInterface->refreshAll();
     }
 

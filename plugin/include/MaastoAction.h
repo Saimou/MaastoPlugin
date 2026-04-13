@@ -53,6 +53,9 @@ namespace MaastoPlugin
         // Laskee pisteiden määrän per luokka-arvo valitulle scalar-kentälle
         void computeClassCounts( const QString &fieldName );
 
+        // Asettaa .ptc-värit 3D-näkymään custom ccColorScale:na
+        void applyPtcColorScale();
+
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
