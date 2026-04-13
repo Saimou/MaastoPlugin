@@ -53,8 +53,11 @@ namespace MaastoPlugin
         // Laskee pisteiden määrän per luokka-arvo valitulle scalar-kentälle
         void computeClassCounts( const QString &fieldName );
 
-        // Asettaa .ptc-värit 3D-näkymään custom ccColorScale:na
-        void applyPtcColorScale();
+        // Kirjoittaa .ptc-värit suoraan pistepilven vertex-taulukkoon
+        void applyPtcColors();
+
+        // Poistaa vertex-värit ja palauttaa normaali SF-väritys
+        void removePtcColors();
 
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
@@ -77,6 +80,9 @@ namespace MaastoPlugin
 
         bool                m_updatingCloud;
         bool                m_updatingVisibility;
+
+        // Merkitään onko vertex-värit kirjoitettu pistepilveen
+        bool                m_ptcColorsApplied;
 
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
