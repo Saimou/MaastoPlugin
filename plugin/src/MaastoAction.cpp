@@ -226,18 +226,21 @@ namespace MaastoPlugin
         buttonRow->addWidget( m_polygonButton );
 
         QPushButton *actionButton = new QPushButton( this );
-        {
-            QIcon buttonIcon;
-            buttonIcon.addPixmap(
-                QPixmap( ":/CC/plugin/qMaastoPlugin/images/icon.png" ),
-                QIcon::Normal );
-            buttonIcon.addPixmap(
-                QPixmap( ":/CC/plugin/qMaastoPlugin/images/icon_pressed.png" ),
-                QIcon::Active );
-            actionButton->setIcon( buttonIcon );
-        }
+        actionButton->setIcon( QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
         actionButton->setIconSize( QSize( 96, 96 ) );
         actionButton->setFixedSize( QSize( 128, 128 ) );
+
+        // Vaihda ikoni kun nappi painetaan alas / vapautetaan
+        connect( actionButton, &QPushButton::pressed, this, [actionButton]()
+        {
+            actionButton->setIcon(
+                QIcon( ":/CC/plugin/qMaastoPlugin/images/icon_pressed.png" ) );
+        } );
+        connect( actionButton, &QPushButton::released, this, [actionButton]()
+        {
+            actionButton->setIcon(
+                QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
+        } );
         buttonRow->addWidget( actionButton );
 
         layout->addLayout( buttonRow );
@@ -737,7 +740,9 @@ namespace MaastoPlugin
             m_highlightObjects.push_back( highlighted );
         }
 
-        m_appInterface->updateUI();
+        // Ei kutsuta updateUI():ta tässä — se triggeröisi onNewSelection() → updateCloud()
+        // → populateColorComboBox() → applyColorField() → updateUI() silmukan
+        // joka tyhjentäisi m_indexHitCount:n tai estäisi luokittelun
         m_appInterface->refreshAll();
     }
 
