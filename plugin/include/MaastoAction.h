@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
+#include <QLabel>
 #include <QSet>
 #include <QMap>
 #include <vector>
@@ -50,38 +51,35 @@ namespace MaastoPlugin
         void removeHighlightObjects();
         void refreshHighlights();
 
-        // Laskee pisteiden määrän per luokka-arvo valitulle scalar-kentälle
         void computeClassCounts( const QString &fieldName );
-
-        // Kirjoittaa .ptc-värit suoraan pistepilven vertex-taulukkoon
         void applyPtcColors();
-
-        // Poistaa vertex-värit ja palauttaa normaali SF-väritys
         void removePtcColors();
+
+        // Yrittää ladata .ptc-tiedoston automaattisesti pistepilven kansiosta
+        void tryAutoLoadPtcFile();
+
+        // Lataa .ptc-tiedoston ja päivittää UI:n
+        void loadPtcFile( const QString &filePath );
 
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
-        // Read class definition file -nappi
+        // Read class definition file -nappi ja polkunäyttö
         QPushButton        *m_readFileButton;
+        QLabel             *m_ptcFileLabel;
 
         QComboBox          *m_valuesComboBox;
-
-        // Luokat-lista (QTreeWidget: Value / Name / Color)
         QTreeWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
 
         QComboBox          *m_targetClassComboBox;
         QComboBox          *m_colorComboBox;
 
-        // Näkyvät luokat -lista (visibility mask, QTreeWidget)
         QTreeWidget        *m_visibilityListWidget;
         QPushButton        *m_selectAllVisButton;
 
         bool                m_updatingCloud;
         bool                m_updatingVisibility;
-
-        // Merkitään onko vertex-värit kirjoitettu pistepilveen
         bool                m_ptcColorsApplied;
 
         PolygonDrawer      *m_polygonDrawer;
@@ -91,10 +89,7 @@ namespace MaastoPlugin
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
 
-        // Luetut luokkamääritykset .ptc-tiedostosta
         QMap<int, ClassDefinition> m_classDefinitions;
-
-        // Pisteiden lukumäärä per luokka-arvo (lasketaan scalar-kentästä)
         QMap<int, int>             m_classCounts;
 
         std::map<unsigned, int> m_indexHitCount;

@@ -24,6 +24,8 @@
 #include <QTreeWidgetItem>
 #include <QFileDialog>
 #include <QHeaderView>
+#include <QDir>
+#include <QRegularExpression>
 #include <QIcon>
 #include <QMap>
 #include <map>
@@ -108,6 +110,7 @@ namespace MaastoPlugin
         , m_updatingCloud( false )
         , m_updatingVisibility( false )
         , m_ptcColorsApplied( false )
+        , m_ptcFileLabel( nullptr )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
         , m_dualPolygonCheckbox( nullptr )
@@ -124,21 +127,20 @@ namespace MaastoPlugin
         m_readFileButton = new QPushButton( "Read class definition file", this );
         layout->addWidget( m_readFileButton );
 
+        // Polkunäyttö Read-napin alle (piilotettu kunnes tiedosto on ladattu)
+        m_ptcFileLabel = new QLabel( "", this );
+        m_ptcFileLabel->setVisible( false );
+        m_ptcFileLabel->setWordWrap( true );
+        m_ptcFileLabel->setStyleSheet( "color: gray; font-size: 9pt;" );
+        layout->addWidget( m_ptcFileLabel );
+
         connect( m_readFileButton, &QPushButton::clicked, this, [this]()
         {
             const QString file = QFileDialog::getOpenFileName(
                 this, "Open class definition", "",
                 "PTC files (*.ptc);;All files (*.*)" );
             if ( !file.isEmpty() )
-            {
-                m_classDefinitions = ClassDefinitionReader::read( file );
-                populateValueList( m_valuesComboBox->currentText() );
-
-                // Jos Pisteiden väritys on Classification, päivitä värit .ptc:stä
-                const QString colorField = m_colorComboBox->currentText();
-                if ( colorField.compare( "Classification", Qt::CaseInsensitive ) == 0 )
-                    applyPtcColors();
-            }
+                loadPtcFile( file );
         } );
 
         // --- Scalar field ---
@@ -411,16 +413,28 @@ namespace MaastoPlugin
         removePtcColors();
         resetVisibility();
 
+        // Jos pilvi vaihtuu, nollaa luokkamääritykset ja polkunäyttö
+        if ( m_cloud != cloud )
+        {
+            m_classDefinitions.clear();
+            m_classCounts.clear();
+            m_ptcFileLabel->setText( "" );
+            m_ptcFileLabel->setVisible( false );
+        }
+
         QString keepValues      = m_valuesComboBox->currentText();
         QString keepTargetClass = m_targetClassComboBox->currentText();
         QString keepColor       = m_colorComboBox->currentText();
 
         m_cloud = cloud;
 
+        // Automaattinen .ptc-lataus jos ei ladattu
+        if ( m_classDefinitions.isEmpty() )
+            tryAutoLoadPtcFile();
+
         populateComboBox( m_valuesComboBox, keepValues );
         populateTargetClassComboBox( keepTargetClass );
         populateColorComboBox( keepColor );
-        // populateColorComboBox kutsuu applyColorField joka kutsuu populateVisibilityList
 
         m_updatingCloud = false;
     }
@@ -1089,6 +1103,70 @@ namespace MaastoPlugin
             m_cloud->prepareDisplayForRefresh();
             m_appInterface->refreshAll();
         }
+    }
+
+    // ----------------------------------------------------------------
+    // loadPtcFile
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::loadPtcFile( const QString &filePath )
+    {
+        QMap<int, ClassDefinition> defs = ClassDefinitionReader::read( filePath );
+        if ( defs.isEmpty() )
+        {
+            m_appInterface->dispToConsole(
+                QString( "MaastoPlugin: .ptc-tiedoston lukeminen epäonnistui: %1" ).arg( filePath ),
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        m_classDefinitions = defs;
+
+        // Näytä polku Read-napin alla
+        m_ptcFileLabel->setText( filePath );
+        m_ptcFileLabel->setVisible( true );
+
+        // Päivitä Luokat-lista
+        populateValueList( m_valuesComboBox->currentText() );
+
+        // Päivitä värit jos Pisteiden väritys on Classification
+        const QString colorField = m_colorComboBox->currentText();
+        if ( colorField.compare( "Classification", Qt::CaseInsensitive ) == 0 )
+            applyPtcColors();
+    }
+
+    // ----------------------------------------------------------------
+    // tryAutoLoadPtcFile
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::tryAutoLoadPtcFile()
+    {
+        if ( !m_cloud )
+            return;
+
+        // Hae parent-objektin nimi — muoto: "tiedosto.laz (/polku/kansioon)"
+        ccHObject *parent = m_cloud->getParent();
+        if ( !parent )
+            return;
+
+        // Parsitaan polku sulkujen sisältä
+        const QRegularExpression re( R"(\((.+)\)$)" );
+        const QRegularExpressionMatch match = re.match( parent->getName() );
+        if ( !match.hasMatch() )
+            return;
+
+        const QString folderPath = match.captured( 1 );
+        QDir dir( folderPath );
+        if ( !dir.exists() )
+            return;
+
+        // Etsi ensimmäinen .ptc-tiedosto kansiosta
+        const QStringList ptcFiles = dir.entryList( { "*.ptc" }, QDir::Files );
+        if ( ptcFiles.isEmpty() )
+            return;
+
+        const QString ptcPath = dir.absoluteFilePath( ptcFiles.first() );
+        loadPtcFile( ptcPath );
     }
 
     // ----------------------------------------------------------------
