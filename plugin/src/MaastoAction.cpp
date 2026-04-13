@@ -76,6 +76,12 @@ namespace MaastoPlugin
     // MaastoDialog
     // ----------------------------------------------------------------
 
+    MaastoDialog::~MaastoDialog()
+    {
+        // Palauta pistepilvi näkyviin ennen tuhoamista
+        resetVisibility();
+    }
+
     MaastoDialog::MaastoDialog( ccMainAppInterface *appInterface, QWidget *parent )
         : QDialog( parent )
         , m_appInterface( appInterface )
@@ -85,7 +91,10 @@ namespace MaastoPlugin
         , m_selectAllButton( nullptr )
         , m_targetClassComboBox( nullptr )
         , m_colorComboBox( nullptr )
+        , m_visibilityListWidget( nullptr )
+        , m_selectAllVisButton( nullptr )
         , m_updatingCloud( false )
+        , m_updatingVisibility( false )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
         , m_nearDistSpinBox( nullptr )
@@ -126,6 +135,21 @@ namespace MaastoPlugin
         m_colorComboBox = new QComboBox( this );
         layout->addWidget( m_colorComboBox );
 
+        // --- Näkyvät luokat -lista (visibility mask) ---
+        {
+            QHBoxLayout *visHeader = new QHBoxLayout();
+            visHeader->addWidget( new QLabel( "Näkyvät luokat:", this ) );
+            m_selectAllVisButton = new QPushButton( "Valitse kaikki", this );
+            m_selectAllVisButton->setCheckable( true );
+            m_selectAllVisButton->setChecked( true );   // oletuksena kaikki valittuna
+            m_selectAllVisButton->setFixedHeight( 22 );
+            visHeader->addWidget( m_selectAllVisButton );
+            layout->addLayout( visHeader );
+        }
+        m_visibilityListWidget = new QListWidget( this );
+        m_visibilityListWidget->setMinimumHeight( 120 );
+        layout->addWidget( m_visibilityListWidget );
+
         // Päivitä arvolista ja kohdeluokka kun valuesComboBox muuttuu
         connect( m_valuesComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
@@ -134,11 +158,12 @@ namespace MaastoPlugin
                 populateTargetClassComboBox();
             } );
 
-        // Aseta värjäys kun colorComboBox muuttuu
+        // Aseta värjäys + päivitä näkyvyyslista kun colorComboBox muuttuu
         connect( m_colorComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
             {
                 applyColorField( fieldName );
+                populateVisibilityList( fieldName );
             } );
 
         // Toggle: Valitse kaikki / Poista valinnat
@@ -162,6 +187,32 @@ namespace MaastoPlugin
                 m_selectAllButton->setText( "Valitse kaikki" );
                 m_selectAllButton->blockSignals( false );
                 refreshHighlights();
+            } );
+
+        // Näkyvät luokat: toggle Valitse kaikki / Poista valinnat
+        connect( m_selectAllVisButton, &QPushButton::toggled,
+            [this]( bool checked )
+            {
+                m_selectAllVisButton->setText( checked ? "Poista valinnat" : "Valitse kaikki" );
+                const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
+                m_visibilityListWidget->blockSignals( true );
+                for ( int i = 0; i < m_visibilityListWidget->count(); ++i )
+                    m_visibilityListWidget->item( i )->setCheckState( state );
+                m_visibilityListWidget->blockSignals( false );
+                applyVisibilityFilter();
+            } );
+
+        // Yksittäisen rivin klikkaus: päivitä nappi + visibility
+        connect( m_visibilityListWidget, &QListWidget::itemChanged,
+            [this]( QListWidgetItem* )
+            {
+                if ( m_updatingVisibility )
+                    return;
+                m_selectAllVisButton->blockSignals( true );
+                m_selectAllVisButton->setChecked( false );
+                m_selectAllVisButton->setText( "Valitse kaikki" );
+                m_selectAllVisButton->blockSignals( false );
+                applyVisibilityFilter();
             } );
 
         // --- Napbirivi alimmaisena ---
@@ -296,6 +347,9 @@ namespace MaastoPlugin
             return;
         m_updatingCloud = true;
 
+        // Palauta vanha pilvi näkyviin ennen vaihtoa
+        resetVisibility();
+
         QString keepValues      = m_valuesComboBox->currentText();
         QString keepTargetClass = m_targetClassComboBox->currentText();
         QString keepColor       = m_colorComboBox->currentText();
@@ -305,6 +359,7 @@ namespace MaastoPlugin
         populateComboBox( m_valuesComboBox, keepValues );
         populateTargetClassComboBox( keepTargetClass );
         populateColorComboBox( keepColor );
+        // populateColorComboBox kutsuu applyColorField joka kutsuu populateVisibilityList
 
         m_updatingCloud = false;
     }
@@ -416,6 +471,7 @@ namespace MaastoPlugin
         m_colorComboBox->setCurrentIndex( keepIdx );
 
         applyColorField( m_colorComboBox->currentText() );
+        populateVisibilityList( m_colorComboBox->currentText() );
     }
 
     void MaastoDialog::applyColorField( const QString &fieldName )
@@ -652,6 +708,135 @@ namespace MaastoPlugin
 
         m_appInterface->updateUI();
         m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // populateVisibilityList
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::populateVisibilityList( const QString &fieldName )
+    {
+        m_updatingVisibility = true;
+        m_visibilityListWidget->clear();
+
+        // RGB-valinnalla tai tyhjällä pilvellä lista jää tyhjäksi
+        if ( fieldName == "RGB" || m_cloud == nullptr || fieldName.isEmpty() )
+        {
+            m_updatingVisibility = false;
+            // Palauta kaikki näkyviin jos lista on tyhjä
+            resetVisibility();
+            return;
+        }
+
+        const QStringList values = getScalarFieldValues( m_cloud, fieldName );
+        for ( const QString &val : values )
+        {
+            QListWidgetItem *item = new QListWidgetItem( val, m_visibilityListWidget );
+            item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
+            item->setCheckState( Qt::Checked );  // oletuksena kaikki valittuna
+        }
+
+        // Päivitä toggle-napin tila (kaikki valittuna → nappi ON)
+        m_selectAllVisButton->blockSignals( true );
+        m_selectAllVisButton->setChecked( true );
+        m_selectAllVisButton->setText( "Poista valinnat" );
+        m_selectAllVisButton->blockSignals( false );
+
+        m_updatingVisibility = false;
+
+        // Kaikki valittuna → ei tarvita visibility maskia
+        resetVisibility();
+    }
+
+    // ----------------------------------------------------------------
+    // applyVisibilityFilter
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::applyVisibilityFilter()
+    {
+        if ( m_cloud == nullptr )
+            return;
+
+        const QString sfName = m_colorComboBox->currentText();
+        if ( sfName == "RGB" || sfName.isEmpty() )
+        {
+            resetVisibility();
+            return;
+        }
+
+        // Kerää näkyvät arvot
+        QSet<float> visibleValues;
+        bool allChecked = true;
+        for ( int i = 0; i < m_visibilityListWidget->count(); ++i )
+        {
+            QListWidgetItem *item = m_visibilityListWidget->item( i );
+            if ( item->checkState() == Qt::Checked )
+                visibleValues.insert( item->text().toFloat() );
+            else
+                allChecked = false;
+        }
+
+        // Jos kaikki valittuna → poista maski (nolla lisämuistia)
+        if ( allChecked || visibleValues.isEmpty() )
+        {
+            resetVisibility();
+            return;
+        }
+
+        int sfIdx = m_cloud->getScalarFieldIndexByName( sfName.toStdString().c_str() );
+        if ( sfIdx < 0 )
+        {
+            resetVisibility();
+            return;
+        }
+        CCCoreLib::ScalarField *sf = m_cloud->getScalarField( sfIdx );
+        if ( !sf )
+        {
+            resetVisibility();
+            return;
+        }
+
+        // Alusta visibility mask
+        if ( !m_cloud->resetVisibilityArray() )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: visibility maskin alustus epäonnistui",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        auto& vis = m_cloud->getTheVisibilityArray();
+        for ( unsigned i = 0; i < m_cloud->size(); ++i )
+        {
+            const float val = static_cast<float>( sf->getValue( i ) );
+            vis[i] = visibleValues.contains( val )
+                     ? CCCoreLib::POINT_VISIBLE
+                     : CCCoreLib::POINT_HIDDEN;
+        }
+
+        m_cloud->prepareDisplayForRefresh();
+
+        m_updatingCloud = true;
+        m_appInterface->updateUI();
+        m_updatingCloud = false;
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // resetVisibility
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::resetVisibility()
+    {
+        if ( m_cloud == nullptr )
+            return;
+
+        if ( m_cloud->isVisibilityTableInstantiated() )
+        {
+            m_cloud->unallocateVisibilityArray();
+            m_cloud->prepareDisplayForRefresh();
+            m_appInterface->refreshAll();
+        }
     }
 
     // ----------------------------------------------------------------

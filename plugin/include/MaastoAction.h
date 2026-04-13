@@ -24,7 +24,7 @@ namespace MaastoPlugin
 
     public:
         explicit MaastoDialog( ccMainAppInterface *appInterface, QWidget *parent = nullptr );
-        ~MaastoDialog() override = default;
+        ~MaastoDialog() override;
 
         void updateCloud( ccPointCloud *cloud );
         bool isUpdatingCloud() const { return m_updatingCloud; }
@@ -34,31 +34,38 @@ namespace MaastoPlugin
         void populateColorComboBox( const QString &keepField = QString() );
         void populateValueList( const QString &fieldName );
         void populateTargetClassComboBox( const QString &keepValue = QString() );
+        void populateVisibilityList( const QString &fieldName );
         void applyColorField( const QString &fieldName );
+        void applyVisibilityFilter();
+        void resetVisibility();
         void performClassification();
 
-        // Palauttaa ☑-tilan arvot Arvot-listasta
         QSet<float> getCheckedValues() const;
-
-        // Luo highlight-pilven m_highlightedIndices:stä suodatettuna valituilla arvoilla
         ccPointCloud* createFilteredHighlight( const QSet<float>& selectedValues );
-
-        // Poistaa kaikki highlight-pilvet DB:stä
         void removeHighlightObjects();
-
-        // Päivittää highlight-pilvet vastaamaan nykyistä Arvot-valintaa
         void refreshHighlights();
 
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
+        // Scalar field -valitsin
         QComboBox          *m_valuesComboBox;
+
+        // Luokat-lista (luokitteluun)
         QListWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
+
         QComboBox          *m_targetClassComboBox;
+
+        // Pisteiden väritys
         QComboBox          *m_colorComboBox;
 
+        // Näkyvät luokat -lista (visibility mask)
+        QListWidget        *m_visibilityListWidget;
+        QPushButton        *m_selectAllVisButton;
+
         bool                m_updatingCloud;
+        bool                m_updatingVisibility;  // estää signaalisilukat visibility-päivityksessä
 
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
@@ -66,13 +73,8 @@ namespace MaastoPlugin
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
 
-        // Kaikki prisman sisällä olevat pisteiden indeksit (suodattamaton)
         std::vector<unsigned>   m_highlightedIndices;
-
-        // 3D-prismat — poistetaan luokittelun jälkeen
         std::vector<ccHObject*> m_meshObjects;
-
-        // Highlight-pilvet — päivitetään kun Arvot-valinta muuttuu
         std::vector<ccHObject*> m_highlightObjects;
     };
 
