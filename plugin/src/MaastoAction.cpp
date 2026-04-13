@@ -105,7 +105,7 @@ namespace MaastoPlugin
         // --- Arvot (checkbox-monivalinta) + toggle-nappi ---
         {
             QHBoxLayout *arvoHeader = new QHBoxLayout();
-            arvoHeader->addWidget( new QLabel( "Arvot:", this ) );
+            arvoHeader->addWidget( new QLabel( "Luokat:", this ) );
             m_selectAllButton = new QPushButton( "Valitse kaikki", this );
             m_selectAllButton->setCheckable( true );
             m_selectAllButton->setFixedHeight( 22 );
@@ -121,8 +121,8 @@ namespace MaastoPlugin
         m_targetClassComboBox = new QComboBox( this );
         layout->addWidget( m_targetClassComboBox );
 
-        // --- Värjää pisteet (RGB + scalar-kentät) ---
-        layout->addWidget( new QLabel( "Värjää pisteet:", this ) );
+        // --- Pisteiden väritys (RGB + scalar-kentät) ---
+        layout->addWidget( new QLabel( "Pisteiden väritys:", this ) );
         m_colorComboBox = new QComboBox( this );
         layout->addWidget( m_colorComboBox );
 
