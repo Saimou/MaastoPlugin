@@ -50,6 +50,9 @@ namespace MaastoPlugin
         void removeHighlightObjects();
         void refreshHighlights();
 
+        // Laskee pisteiden määrän per luokka-arvo valitulle scalar-kentälle
+        void computeClassCounts( const QString &fieldName );
+
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
@@ -81,6 +84,9 @@ namespace MaastoPlugin
 
         // Luetut luokkamääritykset .ptc-tiedostosta
         QMap<int, ClassDefinition> m_classDefinitions;
+
+        // Pisteiden lukumäärä per luokka-arvo (lasketaan scalar-kentästä)
+        QMap<int, int>             m_classCounts;
 
         std::map<unsigned, int> m_indexHitCount;
         std::vector<ccHObject*> m_meshObjects;

@@ -456,8 +456,29 @@ namespace MaastoPlugin
             applyColorField( comboBox->currentText() );
     }
 
+    void MaastoDialog::computeClassCounts( const QString &fieldName )
+    {
+        m_classCounts.clear();
+        if ( !m_cloud || fieldName.isEmpty() )
+            return;
+
+        int sfIdx = m_cloud->getScalarFieldIndexByName( fieldName.toStdString().c_str() );
+        if ( sfIdx < 0 )
+            return;
+
+        CCCoreLib::ScalarField *sf = m_cloud->getScalarField( sfIdx );
+        if ( !sf )
+            return;
+
+        for ( unsigned i = 0; i < m_cloud->size(); ++i )
+            m_classCounts[ static_cast<int>( sf->getValue( i ) ) ]++;
+    }
+
     void MaastoDialog::populateValueList( const QString &fieldName )
     {
+        // Laske pisteiden määrät ennen listan täyttöä
+        computeClassCounts( fieldName );
+
         // Tallenna nykyiset valinnat ennen tyhjennystä
         QSet<QString> checkedValues;
         for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
@@ -469,20 +490,35 @@ namespace MaastoPlugin
 
         const QStringList values = getScalarFieldValues( m_cloud, fieldName );
 
-        // Näytetään Name + Color sarakkeet jos Scalar field on Classification
+        // Näytetään Name + Color sarakkeet jos Scalar field on Classification ja .ptc on ladattu
         const bool isClassif = ( fieldName.compare( "Classification", Qt::CaseInsensitive ) == 0 )
                                && !m_classDefinitions.isEmpty();
 
-        if ( isClassif )
+        // Count-sarake näytetään aina kun pilvi on valittu
+        const bool hasCloud = ( m_cloud != nullptr ) && !values.isEmpty();
+
+        if ( hasCloud )
         {
-            m_listWidget->setColumnCount( 3 );
-            m_listWidget->setHeaderHidden( false );
-            m_listWidget->setHeaderLabels( { "Value", "Name", "Color" } );
-            m_listWidget->header()->setStretchLastSection( false );
-            m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::ResizeToContents );
-            m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::Stretch );
-            m_listWidget->header()->setSectionResizeMode( 2, QHeaderView::Fixed );
-            m_listWidget->header()->resizeSection( 2, 40 );
+            if ( isClassif )
+            {
+                m_listWidget->setColumnCount( 4 );
+                m_listWidget->setHeaderHidden( false );
+                m_listWidget->setHeaderLabels( { "Value", "Name", "Color", "Count" } );
+                m_listWidget->header()->setStretchLastSection( false );
+                m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::ResizeToContents );
+                m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::Stretch );
+                m_listWidget->header()->setSectionResizeMode( 2, QHeaderView::Fixed );
+                m_listWidget->header()->resizeSection( 2, 40 );
+                m_listWidget->header()->setSectionResizeMode( 3, QHeaderView::ResizeToContents );
+            }
+            else
+            {
+                m_listWidget->setColumnCount( 2 );
+                m_listWidget->setHeaderHidden( false );
+                m_listWidget->setHeaderLabels( { "Value", "Count" } );
+                m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::Stretch );
+                m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::ResizeToContents );
+            }
         }
         else
         {
@@ -498,21 +534,27 @@ namespace MaastoPlugin
                                     ? Qt::Checked : Qt::Unchecked );
             item->setText( 0, val );
 
-            if ( isClassif )
+            const int intVal = val.toInt();
+
+            if ( isClassif && m_classDefinitions.contains( intVal ) )
             {
-                const int intVal = val.toInt();
-                if ( m_classDefinitions.contains( intVal ) )
+                const ClassDefinition &def = m_classDefinitions[intVal];
+                item->setText( 1, def.name );
+                if ( def.color.isValid() )
                 {
-                    const ClassDefinition &def = m_classDefinitions[intVal];
-                    item->setText( 1, def.name );
-                    if ( def.color.isValid() )
-                    {
-                        // Näytä värillinen neliö Color-sarakkeessa
-                        QPixmap px( 20, 20 );
-                        px.fill( def.color );
-                        item->setIcon( 2, QIcon( px ) );
-                    }
+                    QPixmap px( 20, 20 );
+                    px.fill( def.color );
+                    item->setIcon( 2, QIcon( px ) );
                 }
+            }
+
+            // Count-sarake: oikea sarakeindeksi riippuu isClassif:stä
+            if ( hasCloud )
+            {
+                const int countCol = isClassif ? 3 : 1;
+                const int count = m_classCounts.value( intVal, 0 );
+                item->setText( countCol, QString::number( count ) );
+                item->setTextAlignment( countCol, Qt::AlignRight | Qt::AlignVCenter );
             }
         }
 
@@ -681,6 +723,9 @@ namespace MaastoPlugin
             QString( "MaastoPlugin: luokiteltu %1 pistettä → %2" )
                 .arg( count ).arg( targetStr ),
             ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+        // Päivitä Count-sarake luokittelun jälkeen
+        populateValueList( sfName );
 
         m_appInterface->updateUI();
         m_appInterface->refreshAll();
