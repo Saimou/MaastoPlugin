@@ -15,8 +15,10 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QIcon>
+#include <map>
 #include <QSet>
 #include <QStringList>
 #include <algorithm>
@@ -97,6 +99,7 @@ namespace MaastoPlugin
         , m_updatingVisibility( false )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
+        , m_dualPolygonCheckbox( nullptr )
         , m_nearDistSpinBox( nullptr )
         , m_farDistSpinBox( nullptr )
     {
@@ -236,6 +239,16 @@ namespace MaastoPlugin
             performClassification();
         } );
 
+        // --- Kahden polygonin luokittelu ---
+        m_dualPolygonCheckbox = new QCheckBox( "Kahden polygonin luokittelu", this );
+        layout->addWidget( m_dualPolygonCheckbox );
+
+        // Kun checkbox muuttuu → päivitä highlight
+        connect( m_dualPolygonCheckbox, &QCheckBox::toggled, this, [this]()
+        {
+            refreshHighlights();
+        } );
+
         // --- Etäisyysasetukset ---
         QFormLayout *distForm = new QFormLayout();
         distForm->setContentsMargins( 0, 4, 0, 4 );
@@ -313,9 +326,8 @@ namespace MaastoPlugin
                         );
                         if ( !indices.empty() )
                         {
-                            m_highlightedIndices.insert(
-                                m_highlightedIndices.end(),
-                                indices.begin(), indices.end() );
+                            for ( unsigned idx : indices )
+                                m_indexHitCount[idx]++;
                         }
                         else
                         {
@@ -512,7 +524,7 @@ namespace MaastoPlugin
 
     void MaastoDialog::performClassification()
     {
-        if ( !m_cloud || m_highlightedIndices.empty() )
+        if ( !m_cloud || m_indexHitCount.empty() )
         {
             m_appInterface->dispToConsole(
                 "MaastoPlugin: ei luokiteltavia pisteitä — piirrä ensin polygon",
@@ -554,11 +566,16 @@ namespace MaastoPlugin
 
         const ScalarType targetValue = static_cast<ScalarType>( targetStr.toFloat() );
 
-        // Luokittele: vain prisman sisällä olevat pisteet joilla on valittu arvo
+        // Kahden polygonin tilassa luokitellaan vain pisteet jotka ovat ≥2 prisman sisällä
+        const int minHits = ( m_dualPolygonCheckbox && m_dualPolygonCheckbox->isChecked() ) ? 2 : 1;
+
+        // Luokittele: m_indexHitCount perusteella suodatettuna
         unsigned count = 0;
-        for ( unsigned idx : m_highlightedIndices )
+        for ( const auto& kv : m_indexHitCount )
         {
-            if ( idx >= m_cloud->size() )
+            const unsigned idx  = kv.first;
+            const int      hits = kv.second;
+            if ( hits < minHits || idx >= m_cloud->size() )
                 continue;
             const float val = static_cast<float>( sf->getValue( idx ) );
             if ( selectedValues.contains( val ) )
@@ -577,7 +594,7 @@ namespace MaastoPlugin
         m_meshObjects.clear();
 
         removeHighlightObjects();
-        m_highlightedIndices.clear();
+        m_indexHitCount.clear();
 
         m_appInterface->dispToConsole(
             QString( "MaastoPlugin: luokiteltu %1 pistettä → %2" )
@@ -609,7 +626,7 @@ namespace MaastoPlugin
     {
         static int s_counter = 0;
 
-        if ( !m_cloud || m_highlightedIndices.empty() || selectedValues.isEmpty() )
+        if ( !m_cloud || m_indexHitCount.empty() || selectedValues.isEmpty() )
             return nullptr;
 
         const QString sfName = m_valuesComboBox->currentText();
@@ -624,11 +641,16 @@ namespace MaastoPlugin
         if ( !sf )
             return nullptr;
 
-        // Kerää pisteet joiden arvo on valituissa arvoissa
+        // Kahden polygonin tilassa näytetään vain pisteet jotka ovat ≥2 prisman sisällä
+        const int minHits = ( m_dualPolygonCheckbox && m_dualPolygonCheckbox->isChecked() ) ? 2 : 1;
+
+        // Kerää pisteet joiden hitCount ≥ minHits ja arvo on valituissa arvoissa
         std::vector<unsigned> matchIndices;
-        for ( unsigned idx : m_highlightedIndices )
+        for ( const auto& kv : m_indexHitCount )
         {
-            if ( idx >= m_cloud->size() )
+            const unsigned idx   = kv.first;
+            const int      hits  = kv.second;
+            if ( hits < minHits || idx >= m_cloud->size() )
                 continue;
             const float val = static_cast<float>( sf->getValue( idx ) );
             if ( selectedValues.contains( val ) )
@@ -684,7 +706,7 @@ namespace MaastoPlugin
     {
         removeHighlightObjects();
 
-        if ( !m_cloud || m_highlightedIndices.empty() )
+        if ( !m_cloud || m_indexHitCount.empty() )
         {
             m_appInterface->refreshAll();
             return;

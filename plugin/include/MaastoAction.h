@@ -4,9 +4,11 @@
 #include <QComboBox>
 #include <QListWidget>
 #include <QPushButton>
+#include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QSet>
 #include <vector>
+#include <map>
 
 class ccMainAppInterface;
 class ccPointCloud;
@@ -48,32 +50,29 @@ namespace MaastoPlugin
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
-        // Scalar field -valitsin
         QComboBox          *m_valuesComboBox;
-
-        // Luokat-lista (luokitteluun)
         QListWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
-
         QComboBox          *m_targetClassComboBox;
-
-        // Pisteiden väritys
         QComboBox          *m_colorComboBox;
-
-        // Näkyvät luokat -lista (visibility mask)
         QListWidget        *m_visibilityListWidget;
         QPushButton        *m_selectAllVisButton;
 
         bool                m_updatingCloud;
-        bool                m_updatingVisibility;  // estää signaalisilukat visibility-päivityksessä
+        bool                m_updatingVisibility;
 
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
 
+        // Kahden polygonin luokittelu -checkbox
+        QCheckBox          *m_dualPolygonCheckbox;
+
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
 
-        std::vector<unsigned>   m_highlightedIndices;
+        // pisteindeksi → montako prismaa se on sisällä
+        std::map<unsigned, int> m_indexHitCount;
+
         std::vector<ccHObject*> m_meshObjects;
         std::vector<ccHObject*> m_highlightObjects;
     };
