@@ -226,7 +226,16 @@ namespace MaastoPlugin
         buttonRow->addWidget( m_polygonButton );
 
         QPushButton *actionButton = new QPushButton( this );
-        actionButton->setIcon( QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
+        {
+            QIcon buttonIcon;
+            buttonIcon.addPixmap(
+                QPixmap( ":/CC/plugin/qMaastoPlugin/images/icon.png" ),
+                QIcon::Normal );
+            buttonIcon.addPixmap(
+                QPixmap( ":/CC/plugin/qMaastoPlugin/images/icon_pressed.png" ),
+                QIcon::Active );
+            actionButton->setIcon( buttonIcon );
+        }
         actionButton->setIconSize( QSize( 96, 96 ) );
         actionButton->setFixedSize( QSize( 128, 128 ) );
         buttonRow->addWidget( actionButton );
