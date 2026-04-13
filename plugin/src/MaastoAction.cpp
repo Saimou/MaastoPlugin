@@ -403,9 +403,17 @@ namespace MaastoPlugin
 
         m_colorComboBox->blockSignals( false );
 
-        // Säilytä edellinen valinta
+        // Säilytä edellinen valinta jos mahdollista
         int keepIdx = m_colorComboBox->findText( keepField );
-        m_colorComboBox->setCurrentIndex( keepIdx >= 0 ? keepIdx : 0 );
+        if ( keepIdx < 0 )
+        {
+            // Oletusvalinta: Classification jos löytyy, muuten RGB (indeksi 0)
+            keepIdx = m_colorComboBox->findText(
+                "Classification", Qt::MatchFixedString );
+            if ( keepIdx < 0 )
+                keepIdx = 0; // RGB
+        }
+        m_colorComboBox->setCurrentIndex( keepIdx );
 
         applyColorField( m_colorComboBox->currentText() );
     }
