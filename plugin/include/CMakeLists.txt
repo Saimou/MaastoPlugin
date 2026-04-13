@@ -1,5 +1,6 @@
 target_sources( ${PROJECT_NAME}
     PRIVATE
+        ${CMAKE_CURRENT_LIST_DIR}/ClassDefinition.h
         ${CMAKE_CURRENT_LIST_DIR}/MaastoAction.h
         ${CMAKE_CURRENT_LIST_DIR}/PolygonDrawer.h
         ${CMAKE_CURRENT_LIST_DIR}/VolumeBuilder.h

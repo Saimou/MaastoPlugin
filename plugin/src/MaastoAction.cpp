@@ -1,6 +1,7 @@
 #include "MaastoAction.h"
 #include "PolygonDrawer.h"
 #include "VolumeBuilder.h"
+#include "ClassDefinition.h"
 
 #include "ccMainAppInterface.h"
 #include "ccHObjectCaster.h"
@@ -17,7 +18,12 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QFileDialog>
+#include <QHeaderView>
 #include <QIcon>
+#include <QMap>
 #include <map>
 #include <QSet>
 #include <QStringList>
@@ -88,6 +94,7 @@ namespace MaastoPlugin
         : QDialog( parent )
         , m_appInterface( appInterface )
         , m_cloud( nullptr )
+        , m_readFileButton( nullptr )
         , m_valuesComboBox( nullptr )
         , m_listWidget( nullptr )
         , m_selectAllButton( nullptr )
@@ -104,17 +111,33 @@ namespace MaastoPlugin
         , m_farDistSpinBox( nullptr )
     {
         setWindowTitle( "MaastoPlugin" );
-        setMinimumWidth( 320 );
+        setMinimumWidth( 380 );
         setWindowFlags( windowFlags() | Qt::Window );
 
         QVBoxLayout *layout = new QVBoxLayout( this );
+
+        // --- Read class definition file -nappi (ylimpänä) ---
+        m_readFileButton = new QPushButton( "Read class definition file", this );
+        layout->addWidget( m_readFileButton );
+
+        connect( m_readFileButton, &QPushButton::clicked, this, [this]()
+        {
+            const QString file = QFileDialog::getOpenFileName(
+                this, "Open class definition", "",
+                "PTC files (*.ptc);;All files (*.*)" );
+            if ( !file.isEmpty() )
+            {
+                m_classDefinitions = ClassDefinitionReader::read( file );
+                populateValueList( m_valuesComboBox->currentText() );
+            }
+        } );
 
         // --- Scalar field ---
         layout->addWidget( new QLabel( "Scalar field:", this ) );
         m_valuesComboBox = new QComboBox( this );
         layout->addWidget( m_valuesComboBox );
 
-        // --- Arvot (checkbox-monivalinta) + toggle-nappi ---
+        // --- Luokat (checkbox-monivalinta) + toggle-nappi ---
         {
             QHBoxLayout *arvoHeader = new QHBoxLayout();
             arvoHeader->addWidget( new QLabel( "Luokat:", this ) );
@@ -124,8 +147,10 @@ namespace MaastoPlugin
             arvoHeader->addWidget( m_selectAllButton );
             layout->addLayout( arvoHeader );
         }
-        m_listWidget = new QListWidget( this );
+        m_listWidget = new QTreeWidget( this );
         m_listWidget->setMinimumHeight( 150 );
+        m_listWidget->setHeaderHidden( true );
+        m_listWidget->setRootIsDecorated( false );
         layout->addWidget( m_listWidget );
 
         // --- Luokittele luokkaan ---
@@ -149,8 +174,10 @@ namespace MaastoPlugin
             visHeader->addWidget( m_selectAllVisButton );
             layout->addLayout( visHeader );
         }
-        m_visibilityListWidget = new QListWidget( this );
+        m_visibilityListWidget = new QTreeWidget( this );
         m_visibilityListWidget->setMinimumHeight( 120 );
+        m_visibilityListWidget->setHeaderHidden( true );
+        m_visibilityListWidget->setRootIsDecorated( false );
         layout->addWidget( m_visibilityListWidget );
 
         // Päivitä arvolista ja kohdeluokka kun valuesComboBox muuttuu
@@ -176,14 +203,14 @@ namespace MaastoPlugin
                 m_selectAllButton->setText( checked ? "Poista valinnat" : "Valitse kaikki" );
                 const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
                 m_listWidget->blockSignals( true );
-                for ( int i = 0; i < m_listWidget->count(); ++i )
-                    m_listWidget->item( i )->setCheckState( state );
+                for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+                    m_listWidget->topLevelItem( i )->setCheckState( 0, state );
                 m_listWidget->blockSignals( false );
             } );
 
         // Jos käyttäjä klikkaa yksittäistä riviä: palauta nappi OFF + päivitä highlightit
-        connect( m_listWidget, &QListWidget::itemChanged,
-            [this]( QListWidgetItem* )
+        connect( m_listWidget, &QTreeWidget::itemChanged,
+            [this]( QTreeWidgetItem* )
             {
                 m_selectAllButton->blockSignals( true );
                 m_selectAllButton->setChecked( false );
@@ -199,15 +226,15 @@ namespace MaastoPlugin
                 m_selectAllVisButton->setText( checked ? "Poista valinnat" : "Valitse kaikki" );
                 const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
                 m_visibilityListWidget->blockSignals( true );
-                for ( int i = 0; i < m_visibilityListWidget->count(); ++i )
-                    m_visibilityListWidget->item( i )->setCheckState( state );
+                for ( int i = 0; i < m_visibilityListWidget->topLevelItemCount(); ++i )
+                    m_visibilityListWidget->topLevelItem( i )->setCheckState( 0, state );
                 m_visibilityListWidget->blockSignals( false );
                 applyVisibilityFilter();
             } );
 
         // Yksittäisen rivin klikkaus: päivitä nappi + visibility
-        connect( m_visibilityListWidget, &QListWidget::itemChanged,
-            [this]( QListWidgetItem* )
+        connect( m_visibilityListWidget, &QTreeWidget::itemChanged,
+            [this]( QTreeWidgetItem* )
             {
                 if ( m_updatingVisibility )
                     return;
@@ -433,21 +460,63 @@ namespace MaastoPlugin
     {
         // Tallenna nykyiset valinnat ennen tyhjennystä
         QSet<QString> checkedValues;
-        for ( int i = 0; i < m_listWidget->count(); ++i )
-            if ( m_listWidget->item( i )->checkState() == Qt::Checked )
-                checkedValues.insert( m_listWidget->item( i )->text() );
+        for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+            if ( m_listWidget->topLevelItem( i )->checkState( 0 ) == Qt::Checked )
+                checkedValues.insert( m_listWidget->topLevelItem( i )->text( 0 ) );
 
+        m_listWidget->blockSignals( true );
         m_listWidget->clear();
 
         const QStringList values = getScalarFieldValues( m_cloud, fieldName );
+
+        // Näytetään Name + Color sarakkeet jos Scalar field on Classification
+        const bool isClassif = ( fieldName.compare( "Classification", Qt::CaseInsensitive ) == 0 )
+                               && !m_classDefinitions.isEmpty();
+
+        if ( isClassif )
+        {
+            m_listWidget->setColumnCount( 3 );
+            m_listWidget->setHeaderHidden( false );
+            m_listWidget->setHeaderLabels( { "Value", "Name", "Color" } );
+            m_listWidget->header()->setStretchLastSection( false );
+            m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::ResizeToContents );
+            m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::Stretch );
+            m_listWidget->header()->setSectionResizeMode( 2, QHeaderView::Fixed );
+            m_listWidget->header()->resizeSection( 2, 40 );
+        }
+        else
+        {
+            m_listWidget->setColumnCount( 1 );
+            m_listWidget->setHeaderHidden( true );
+        }
+
         for ( const QString &val : values )
         {
-            QListWidgetItem *item = new QListWidgetItem( val, m_listWidget );
+            QTreeWidgetItem *item = new QTreeWidgetItem( m_listWidget );
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
-            // Palauta valinta jos arvo oli valittuna aiemmin
-            item->setCheckState( checkedValues.contains( val )
-                                 ? Qt::Checked : Qt::Unchecked );
+            item->setCheckState( 0, checkedValues.contains( val )
+                                    ? Qt::Checked : Qt::Unchecked );
+            item->setText( 0, val );
+
+            if ( isClassif )
+            {
+                const int intVal = val.toInt();
+                if ( m_classDefinitions.contains( intVal ) )
+                {
+                    const ClassDefinition &def = m_classDefinitions[intVal];
+                    item->setText( 1, def.name );
+                    if ( def.color.isValid() )
+                    {
+                        // Näytä värillinen neliö Color-sarakkeessa
+                        QPixmap px( 20, 20 );
+                        px.fill( def.color );
+                        item->setIcon( 2, QIcon( px ) );
+                    }
+                }
+            }
         }
+
+        m_listWidget->blockSignals( false );
     }
 
     void MaastoDialog::populateTargetClassComboBox( const QString &keepValue )
@@ -624,9 +693,12 @@ namespace MaastoPlugin
     QSet<float> MaastoDialog::getCheckedValues() const
     {
         QSet<float> values;
-        for ( int i = 0; i < m_listWidget->count(); ++i )
-            if ( m_listWidget->item( i )->checkState() == Qt::Checked )
-                values.insert( m_listWidget->item( i )->text().toFloat() );
+        for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+        {
+            const QTreeWidgetItem *item = m_listWidget->topLevelItem( i );
+            if ( item->checkState( 0 ) == Qt::Checked )
+                values.insert( item->text( 0 ).toFloat() );
+        }
         return values;
     }
 
@@ -753,16 +825,14 @@ namespace MaastoPlugin
     void MaastoDialog::populateVisibilityList( const QString &fieldName )
     {
         // Tallenna nykyiset pois-valinnat ennen tyhjennystä
-        // (säilytetään käyttäjän tekemät valinnat updateCloud():n kutsuessa)
         QSet<QString> uncheckedValues;
-        for ( int i = 0; i < m_visibilityListWidget->count(); ++i )
-            if ( m_visibilityListWidget->item( i )->checkState() == Qt::Unchecked )
-                uncheckedValues.insert( m_visibilityListWidget->item( i )->text() );
+        for ( int i = 0; i < m_visibilityListWidget->topLevelItemCount(); ++i )
+            if ( m_visibilityListWidget->topLevelItem( i )->checkState( 0 ) == Qt::Unchecked )
+                uncheckedValues.insert( m_visibilityListWidget->topLevelItem( i )->text( 0 ) );
 
         m_updatingVisibility = true;
         m_visibilityListWidget->clear();
 
-        // RGB-valinnalla tai tyhjällä pilvellä lista jää tyhjäksi
         if ( fieldName == "RGB" || m_cloud == nullptr || fieldName.isEmpty() )
         {
             m_updatingVisibility = false;
@@ -775,11 +845,11 @@ namespace MaastoPlugin
 
         for ( const QString &val : values )
         {
-            QListWidgetItem *item = new QListWidgetItem( val, m_visibilityListWidget );
+            QTreeWidgetItem *item = new QTreeWidgetItem( m_visibilityListWidget );
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
-            // Palauta edellinen valinta jos se oli pois-valittuna
-            item->setCheckState( uncheckedValues.contains( val )
-                                 ? Qt::Unchecked : Qt::Checked );
+            item->setCheckState( 0, uncheckedValues.contains( val )
+                                    ? Qt::Unchecked : Qt::Checked );
+            item->setText( 0, val );
         }
 
         // Päivitä toggle-napin tila
@@ -821,11 +891,11 @@ namespace MaastoPlugin
         // Kerää näkyvät arvot
         QSet<float> visibleValues;
         bool allChecked = true;
-        for ( int i = 0; i < m_visibilityListWidget->count(); ++i )
+        for ( int i = 0; i < m_visibilityListWidget->topLevelItemCount(); ++i )
         {
-            QListWidgetItem *item = m_visibilityListWidget->item( i );
-            if ( item->checkState() == Qt::Checked )
-                visibleValues.insert( item->text().toFloat() );
+            const QTreeWidgetItem *item = m_visibilityListWidget->topLevelItem( i );
+            if ( item->checkState( 0 ) == Qt::Checked )
+                visibleValues.insert( item->text( 0 ).toFloat() );
             else
                 allChecked = false;
         }

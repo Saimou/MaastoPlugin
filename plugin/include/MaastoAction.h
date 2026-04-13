@@ -2,13 +2,16 @@
 
 #include <QDialog>
 #include <QComboBox>
-#include <QListWidget>
+#include <QTreeWidget>
 #include <QPushButton>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
 #include <QSet>
+#include <QMap>
 #include <vector>
 #include <map>
+
+#include "ClassDefinition.h"
 
 class ccMainAppInterface;
 class ccPointCloud;
@@ -50,12 +53,20 @@ namespace MaastoPlugin
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
+        // Read class definition file -nappi
+        QPushButton        *m_readFileButton;
+
         QComboBox          *m_valuesComboBox;
-        QListWidget        *m_listWidget;
+
+        // Luokat-lista (QTreeWidget: Value / Name / Color)
+        QTreeWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
+
         QComboBox          *m_targetClassComboBox;
         QComboBox          *m_colorComboBox;
-        QListWidget        *m_visibilityListWidget;
+
+        // Näkyvät luokat -lista (visibility mask, QTreeWidget)
+        QTreeWidget        *m_visibilityListWidget;
         QPushButton        *m_selectAllVisButton;
 
         bool                m_updatingCloud;
@@ -63,16 +74,15 @@ namespace MaastoPlugin
 
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
-
-        // Kahden polygonin luokittelu -checkbox
         QCheckBox          *m_dualPolygonCheckbox;
 
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
 
-        // pisteindeksi → montako prismaa se on sisällä
-        std::map<unsigned, int> m_indexHitCount;
+        // Luetut luokkamääritykset .ptc-tiedostosta
+        QMap<int, ClassDefinition> m_classDefinitions;
 
+        std::map<unsigned, int> m_indexHitCount;
         std::vector<ccHObject*> m_meshObjects;
         std::vector<ccHObject*> m_highlightObjects;
     };
