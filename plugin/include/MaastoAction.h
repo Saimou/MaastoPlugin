@@ -4,7 +4,7 @@
 #include <QComboBox>
 #include <QTreeWidget>
 #include <QPushButton>
-#include <QCheckBox>
+#include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
 #include <QSet>
@@ -43,6 +43,7 @@ namespace MaastoPlugin
         void populateVisibilityList( const QString &fieldName );
         void applyColorField( const QString &fieldName );
         void applyVisibilityFilter();
+        void applyShowFilter();
         void resetVisibility();
         void performClassification();
 
@@ -71,6 +72,7 @@ namespace MaastoPlugin
         QComboBox          *m_valuesComboBox;
         QTreeWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
+        QPushButton        *m_showAllButton;
 
         QComboBox          *m_targetClassComboBox;
         QComboBox          *m_colorComboBox;
@@ -80,11 +82,14 @@ namespace MaastoPlugin
 
         bool                m_updatingCloud;
         bool                m_updatingVisibility;
+        bool                m_updatingShow;
         bool                m_ptcColorsApplied;
+
+        QMap<QString, bool> m_showStates;   // arvo → Show-tila (true=näkyvä)
 
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
-        QCheckBox          *m_dualPolygonCheckbox;
+        QSpinBox           *m_minPolygonCountSpinBox;
 
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
