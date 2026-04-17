@@ -95,6 +95,15 @@ namespace MaastoPlugin
 
     MaastoDialog::~MaastoDialog()
     {
+        // Pura "Näytä vain valinta" -tila ennen tuhoamista
+        if ( m_showOnlyMode && m_cloud )
+        {
+            m_cloud->setVisible( true );
+            for ( ccHObject *obj : m_highlightObjects )
+                obj->setVisible( true );
+        }
+        removeSelectionOnlyCloud();
+
         // Palauta pistepilvi alkutilaan ennen tuhoamista
         removePtcColors();
         resetVisibility();
@@ -123,6 +132,8 @@ namespace MaastoPlugin
         , m_measurePointColor( Qt::red )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
+        , m_clearSelectionButton( nullptr )
+        , m_showOnlyButton( nullptr )
         , m_fileButton( nullptr )
         , m_minPolygonCountSpinBox( nullptr )
         , m_nearDistSpinBox( nullptr )
@@ -135,6 +146,8 @@ namespace MaastoPlugin
         , m_measuredY( 0.0 )
         , m_measuredZ( 0.0 )
         , m_measureHighlight( nullptr )
+        , m_showOnlyMode( false )
+        , m_selectionOnlyCloud( nullptr )
     {
         // Käytä 3D-ikkunan pistekokoa highlight- ja mittauspiste-defaultina
         {
@@ -337,9 +350,22 @@ namespace MaastoPlugin
         // --- Napbirivi alimmaisena ---
         QHBoxLayout *buttonRow = new QHBoxLayout();
 
+        // Vasen sarake: "Piirrä polygon" + "Poista valinta" allekkain
+        QVBoxLayout *polygonCol = new QVBoxLayout();
+
         m_polygonButton = new QPushButton( "Piirrä polygon", this );
         m_polygonButton->setCheckable( true );
-        buttonRow->addWidget( m_polygonButton );
+        polygonCol->addWidget( m_polygonButton );
+
+        m_showOnlyButton = new QPushButton( "Näytä vain valinta", this );
+        m_showOnlyButton->setCheckable( true );
+        m_showOnlyButton->setEnabled( false );   // disabloitu kunnes on valinta
+        polygonCol->addWidget( m_showOnlyButton );
+
+        m_clearSelectionButton = new QPushButton( "Poista valinta", this );
+        polygonCol->addWidget( m_clearSelectionButton );
+
+        buttonRow->addLayout( polygonCol );
 
         QPushButton *actionButton = new QPushButton( this );
         actionButton->setIcon( QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
@@ -526,6 +552,22 @@ namespace MaastoPlugin
             }
         } );
 
+        // "Näytä vain valinta" -toggle
+        connect( m_showOnlyButton, &QPushButton::toggled, this, [this]( bool checked )
+        {
+            m_showOnlyMode = checked;
+            if ( checked )
+                enableShowOnlyMode();
+            else
+                disableShowOnlyMode();
+        } );
+
+        // Poista valinta: poistaa kaikki 3D-muodot ja highlight-pisteet
+        connect( m_clearSelectionButton, &QPushButton::clicked, this, [this]()
+        {
+            clearSelection();
+        } );
+
         // Polygon-piirto: nappi toggleataan ON/OFF
         connect( m_polygonButton, &QPushButton::toggled, this, [this]( bool checked )
         {
@@ -601,6 +643,20 @@ namespace MaastoPlugin
         m_updatingCloud = true;
 
         // Palauta vanha pilvi alkutilaan ennen vaihtoa
+        // Jos "Näytä vain valinta" on päällä, pura tila ensin (palauttaa m_cloud näkyviin)
+        if ( m_showOnlyMode )
+        {
+            disableShowOnlyMode();
+            m_showOnlyMode = false;
+            if ( m_showOnlyButton )
+            {
+                m_showOnlyButton->blockSignals( true );
+                m_showOnlyButton->setChecked( false );
+                m_showOnlyButton->blockSignals( false );
+                m_showOnlyButton->setEnabled( false );
+            }
+        }
+
         removePtcColors();
         resetVisibility();
 
@@ -1083,6 +1139,178 @@ namespace MaastoPlugin
     }
 
     // ----------------------------------------------------------------
+    // clearSelection
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::clearSelection()
+    {
+        // 1. Jos "Näytä vain valinta" on päällä, pura tila ensin
+        if ( m_showOnlyMode )
+        {
+            disableShowOnlyMode();
+            m_showOnlyMode = false;
+            if ( m_showOnlyButton )
+            {
+                m_showOnlyButton->blockSignals( true );
+                m_showOnlyButton->setChecked( false );
+                m_showOnlyButton->blockSignals( false );
+                m_showOnlyButton->setEnabled( false );
+            }
+        }
+
+        // 2. Poista kaikki prism-meshit DB:stä
+        for ( ccHObject *obj : m_meshObjects )
+            m_appInterface->removeFromDB( obj, true );
+        m_meshObjects.clear();
+
+        // 3. Poista highlight-pistepilvet DB:stä
+        removeHighlightObjects();
+
+        // 4. Tyhjennä indeksit ja osuma-laskuri
+        m_selectionIndices.clear();
+        m_indexHitCount.clear();
+
+        // 5. Disabloi "Näytä vain valinta" -nappi
+        if ( m_showOnlyButton )
+            m_showOnlyButton->setEnabled( false );
+
+        // 6. Pysäytä aktiivinen polygon-piirto ja poista näkyvä polygon GL-ikkunasta
+        m_polygonDrawer->stopDrawing();
+        m_polygonDrawer->clearCompletedPolygon();
+
+        // 7. Nollaa polygon-nappi ilman signaalin laukaisemista
+        m_polygonButton->blockSignals( true );
+        m_polygonButton->setChecked( false );
+        m_polygonButton->blockSignals( false );
+
+        m_appInterface->dispToConsole(
+            "MaastoPlugin: valinta poistettu",
+            ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // removeSelectionOnlyCloud
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::removeSelectionOnlyCloud()
+    {
+        if ( m_selectionOnlyCloud )
+        {
+            m_appInterface->removeFromDB( m_selectionOnlyCloud, true );
+            m_selectionOnlyCloud = nullptr;
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // enableShowOnlyMode
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::enableShowOnlyMode()
+    {
+        if ( !m_cloud || m_selectionIndices.empty() )
+            return;
+
+        // 1. Piilota pääpilvi
+        m_cloud->setVisible( false );
+        m_cloud->prepareDisplayForRefresh();
+
+        // 2. Piilota highlight-pilvet (keltainen visualisointi)
+        for ( ccHObject *obj : m_highlightObjects )
+        {
+            obj->setVisible( false );
+            obj->prepareDisplayForRefresh();
+        }
+
+        // 3. Poista vanha väliaikainen pilvi jos on
+        removeSelectionOnlyCloud();
+
+        // 4. Rakenna uusi "vain valinta" -pilvi pääpilven visualisointia käyttäen
+        const unsigned count = static_cast<unsigned>( m_selectionIndices.size() );
+        m_selectionOnlyCloud = new ccPointCloud( "SelectionOnly" );
+        if ( !m_selectionOnlyCloud->reserve( count ) )
+        {
+            delete m_selectionOnlyCloud;
+            m_selectionOnlyCloud = nullptr;
+            return;
+        }
+
+        for ( unsigned idx : m_selectionIndices )
+            m_selectionOnlyCloud->addPoint( *m_cloud->getPoint( idx ) );
+
+        // 5. Kopioi visualisointi pääpilveltä
+        if ( m_cloud->sfShown() )
+        {
+            // SF-tila: kopioi scalar field arvot ja värikaava
+            const int srcSfIdx = m_cloud->getCurrentDisplayedScalarFieldIndex();
+            ccScalarField *srcSf = static_cast<ccScalarField*>(
+                m_cloud->getScalarField( srcSfIdx ) );
+
+            if ( srcSf )
+            {
+                ccScalarField *dstSf = new ccScalarField( srcSf->getName() );
+                dstSf->reserve( count );
+                for ( unsigned idx : m_selectionIndices )
+                    dstSf->addElement( srcSf->getValue( idx ) );
+                dstSf->computeMinAndMax();
+                dstSf->setColorScale( srcSf->getColorScale() );
+                dstSf->setColorRampSteps( srcSf->getColorRampSteps() );
+
+                const int dstSfIdx = m_selectionOnlyCloud->addScalarField( dstSf );
+                m_selectionOnlyCloud->setCurrentDisplayedScalarField( dstSfIdx );
+                m_selectionOnlyCloud->showSF( true );
+                m_selectionOnlyCloud->showColors( false );
+            }
+        }
+        else if ( m_cloud->colorsShown() )
+        {
+            // RGB-tila: kopioi per-pisteen RGB pääpilveltä
+            if ( m_cloud->hasColors() && m_selectionOnlyCloud->reserveTheRGBTable() )
+            {
+                for ( unsigned idx : m_selectionIndices )
+                    m_selectionOnlyCloud->addColor( m_cloud->getPointColor( idx ) );
+                m_selectionOnlyCloud->showColors( true );
+                m_selectionOnlyCloud->showSF( false );
+            }
+        }
+
+        // 6. Lisää DB:hen pääpilven lapseksi
+        m_cloud->addChild( m_selectionOnlyCloud );
+        m_appInterface->addToDB(
+            m_selectionOnlyCloud,
+            false, false, false, false );
+
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // disableShowOnlyMode
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::disableShowOnlyMode()
+    {
+        if ( !m_cloud )
+            return;
+
+        // 1. Poista "vain valinta" -pilvi
+        removeSelectionOnlyCloud();
+
+        // 2. Palauta pääpilvi näkyviin
+        m_cloud->setVisible( true );
+        m_cloud->prepareDisplayForRefresh();
+
+        // 3. Palauta highlight-pilvet näkyviin
+        for ( ccHObject *obj : m_highlightObjects )
+        {
+            obj->setVisible( true );
+            obj->prepareDisplayForRefresh();
+        }
+
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
     // getCheckedValues
     // ----------------------------------------------------------------
 
@@ -1138,7 +1366,13 @@ namespace MaastoPlugin
         }
 
         if ( matchIndices.empty() )
+        {
+            m_selectionIndices.clear();
             return nullptr;
+        }
+
+        // Tallenna indeksit "Näytä vain valinta" -tilaa varten
+        m_selectionIndices = matchIndices;
 
         ++s_counter;
         ccPointCloud *highlighted = new ccPointCloud(
@@ -1189,10 +1423,24 @@ namespace MaastoPlugin
 
     void MaastoDialog::refreshHighlights()
     {
+        // Jos "Näytä vain valinta" on päällä, puretaan tila ensin puhtaasti
+        if ( m_showOnlyMode )
+            disableShowOnlyMode();
+
         removeHighlightObjects();
 
         if ( !m_cloud || m_indexHitCount.empty() )
         {
+            // Ei valintaa — disabloi nappi ja nollaa tila
+            m_selectionIndices.clear();
+            if ( m_showOnlyButton )
+            {
+                m_showOnlyButton->blockSignals( true );
+                m_showOnlyButton->setChecked( false );
+                m_showOnlyButton->blockSignals( false );
+                m_showOnlyButton->setEnabled( false );
+            }
+            m_showOnlyMode = false;
             m_appInterface->refreshAll();
             return;
         }
@@ -1211,7 +1459,28 @@ namespace MaastoPlugin
                 false   // autoRedraw
             );
             m_highlightObjects.push_back( highlighted );
+
+            // Aktivoi nappi kun valittuja pisteitä on
+            if ( m_showOnlyButton )
+                m_showOnlyButton->setEnabled( true );
         }
+        else
+        {
+            // createFilteredHighlight palautti nullptr (tyhjä tulos)
+            m_selectionIndices.clear();
+            if ( m_showOnlyButton )
+            {
+                m_showOnlyButton->blockSignals( true );
+                m_showOnlyButton->setChecked( false );
+                m_showOnlyButton->blockSignals( false );
+                m_showOnlyButton->setEnabled( false );
+            }
+            m_showOnlyMode = false;
+        }
+
+        // Jos "Näytä vain valinta" oli päällä, aktivoi se uudelleen päivitetyillä pisteillä
+        if ( m_showOnlyMode )
+            enableShowOnlyMode();
 
         // Ei kutsuta updateUI():ta tässä — se triggeröisi onNewSelection() → updateCloud()
         // → populateColorComboBox() → applyColorField() → updateUI() silmukan

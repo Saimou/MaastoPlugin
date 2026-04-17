@@ -35,6 +35,9 @@ public:
     void startDrawing();
     void stopDrawing();
 
+    // Poistaa viimeksi valmiin polygonin GL-ikkunasta (kutsuttavissa ulkoapäin)
+    void clearCompletedPolygon();
+
     bool isDrawing() const { return m_drawing; }
 
     // Palauttaa viimeksi suljetun polygonin 2D-kulmapisteet (centered GL coords).

@@ -63,6 +63,14 @@ namespace MaastoPlugin
         // Lataa .ptc-tiedoston ja päivittää UI:n
         void loadPtcFile( const QString &filePath );
 
+        // Poistaa kaikki piirretyt 3D-muodot ja highlight-pistepilvet
+        void clearSelection();
+
+        // "Näytä vain valinta" -tila
+        void enableShowOnlyMode();
+        void disableShowOnlyMode();
+        void removeSelectionOnlyCloud();
+
         // Mittaus: piste valitaan 3D-ikkunasta
         // state: 0=ei mittausta, 1=odottaa pistettä, 2=piste valittu (odottaa hyväksyntää)
         void startMeasure( bool isNear );
@@ -103,6 +111,8 @@ namespace MaastoPlugin
 
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
+        QPushButton        *m_clearSelectionButton;
+        QPushButton        *m_showOnlyButton;
         QPushButton        *m_fileButton;
         QSpinBox           *m_minPolygonCountSpinBox;
 
@@ -124,9 +134,14 @@ namespace MaastoPlugin
         QMap<int, ClassDefinition> m_classDefinitions;
         QMap<int, int>             m_classCounts;
 
-        std::map<unsigned, int> m_indexHitCount;
-        std::vector<ccHObject*> m_meshObjects;
-        std::vector<ccHObject*> m_highlightObjects;
+        std::map<unsigned, int>   m_indexHitCount;
+        std::vector<ccHObject*>   m_meshObjects;
+        std::vector<ccHObject*>   m_highlightObjects;
+
+        // "Näytä vain valinta" -tila
+        bool                      m_showOnlyMode;       // onko tila päällä
+        ccPointCloud             *m_selectionOnlyCloud; // väliaikainen pilvi "vain valinta" -tilaan
+        std::vector<unsigned>     m_selectionIndices;   // valittujen pisteiden indeksit m_cloud:ssa
     };
 
     MaastoDialog *openDialog( ccMainAppInterface *appInterface, ccPointCloud *cloud );

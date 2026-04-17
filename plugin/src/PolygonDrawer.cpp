@@ -133,6 +133,11 @@ void PolygonDrawer::disconnectFromWindow()
     }
 }
 
+void PolygonDrawer::clearCompletedPolygon()
+{
+    clearPreviousPolygon();
+}
+
 void PolygonDrawer::clearPreviousPolygon()
 {
     if ( m_previousPolyline && m_previousGLWindow )
