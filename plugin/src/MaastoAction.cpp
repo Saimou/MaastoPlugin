@@ -1,9 +1,11 @@
 #include "MaastoAction.h"
 #include "PolygonDrawer.h"
+#include "SettingsDialog.h"
 #include "VolumeBuilder.h"
 #include "ClassDefinition.h"
 
 #include "ccMainAppInterface.h"
+#include "ccGLWindowInterface.h"
 #include "ccHObjectCaster.h"
 #include "ccMesh.h"
 #include "ccPointCloud.h"
@@ -32,6 +34,9 @@
 #include <QSet>
 #include <QStringList>
 #include <algorithm>
+#include <cmath>
+
+#include "ccGLWindowSignalEmitter.h"
 
 namespace MaastoPlugin
 {
@@ -99,8 +104,7 @@ namespace MaastoPlugin
         : QDialog( parent )
         , m_appInterface( appInterface )
         , m_cloud( nullptr )
-        , m_readFileButton( nullptr )
-        , m_ptcFileLabel( nullptr )
+        , m_ptcFilePath( "" )
         , m_valuesComboBox( nullptr )
         , m_listWidget( nullptr )
         , m_selectAllButton( nullptr )
@@ -113,36 +117,72 @@ namespace MaastoPlugin
         , m_updatingVisibility( false )
         , m_updatingShow( false )
         , m_ptcColorsApplied( false )
+        , m_highlightPointSize( 5 )
+        , m_highlightColor( Qt::yellow )
+        , m_measurePointSize( 8 )
+        , m_measurePointColor( Qt::red )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
+        , m_fileButton( nullptr )
         , m_minPolygonCountSpinBox( nullptr )
         , m_nearDistSpinBox( nullptr )
         , m_farDistSpinBox( nullptr )
+        , m_measureNearButton( nullptr )
+        , m_measureFarButton( nullptr )
+        , m_measureState( 0 )
+        , m_measuringNear( true )
+        , m_measuredX( 0.0 )
+        , m_measuredY( 0.0 )
+        , m_measuredZ( 0.0 )
+        , m_measureHighlight( nullptr )
     {
+        // Käytä 3D-ikkunan pistekokoa highlight- ja mittauspiste-defaultina
+        {
+            ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+            if ( win )
+            {
+                const int baseSize = static_cast<int>(
+                    win->getViewportParameters().defaultPointSize );
+                m_highlightPointSize = baseSize + 1;
+                m_measurePointSize   = baseSize + 3;
+            }
+        }
+
         setWindowTitle( "MaastoPlugin" );
         setMinimumWidth( 380 );
         setWindowFlags( windowFlags() | Qt::Window );
 
         QVBoxLayout *layout = new QVBoxLayout( this );
 
-        // --- Read class definition file -nappi (ylimpänä) ---
-        m_readFileButton = new QPushButton( "Read class definition file", this );
-        layout->addWidget( m_readFileButton );
-
-        // Polkunäyttö Read-napin alle (piilotettu kunnes tiedosto on ladattu)
-        m_ptcFileLabel = new QLabel( "", this );
-        m_ptcFileLabel->setVisible( false );
-        m_ptcFileLabel->setWordWrap( true );
-        m_ptcFileLabel->setStyleSheet( "color: gray; font-size: 9pt;" );
-        layout->addWidget( m_ptcFileLabel );
-
-        connect( m_readFileButton, &QPushButton::clicked, this, [this]()
+        // --- Yläpalkki: Asetukset-nappi vasemmalla, polku-label vieressä ---
         {
-            const QString file = QFileDialog::getOpenFileName(
-                this, "Open class definition", "",
-                "PTC files (*.ptc);;All files (*.*)" );
-            if ( !file.isEmpty() )
-                loadPtcFile( file );
+            QHBoxLayout *topRow = new QHBoxLayout();
+            m_fileButton = new QPushButton( "Asetukset", this );
+            m_fileButton->setFixedWidth( 80 );
+            topRow->addWidget( m_fileButton );
+
+            topRow->addStretch();
+            layout->addLayout( topRow );
+        }
+
+        connect( m_fileButton, &QPushButton::clicked, this, [this]()
+        {
+            const QString currentPath = m_ptcFilePath;
+            SettingsDialog dlg( m_highlightPointSize, m_highlightColor, currentPath,
+                                m_measurePointSize, m_measurePointColor, this );
+
+            // Kun käyttäjä valitsee .ptc-tiedoston asetuksissa → lataa heti
+            connect( &dlg, &SettingsDialog::ptcFileLoaded,
+                this, [this]( const QString &path ) { loadPtcFile( path ); } );
+
+            if ( dlg.exec() == QDialog::Accepted )
+            {
+                m_highlightPointSize = dlg.pointSize();
+                m_highlightColor     = dlg.color();
+                m_measurePointSize   = dlg.measurePointSize();
+                m_measurePointColor  = dlg.measurePointColor();
+                refreshHighlights();
+            }
         } );
 
         // --- Scalar field ---
@@ -153,16 +193,16 @@ namespace MaastoPlugin
         // --- Luokat (checkbox-monivalinta) + toggle-napit ---
         {
             QHBoxLayout *arvoHeader = new QHBoxLayout();
-            arvoHeader->addWidget( new QLabel( "Luokat:", this ) );
+            arvoHeader->addWidget( new QLabel( "Luokittele luokista:", this ) );
+            m_selectAllButton = new QPushButton( "Valitse kaikki", this );
+            m_selectAllButton->setCheckable( true );
+            m_selectAllButton->setFixedHeight( 22 );
+            arvoHeader->addWidget( m_selectAllButton );
             m_showAllButton = new QPushButton( "Hide all", this );
             m_showAllButton->setCheckable( true );
             m_showAllButton->setChecked( true );
             m_showAllButton->setFixedHeight( 22 );
             arvoHeader->addWidget( m_showAllButton );
-            m_selectAllButton = new QPushButton( "Valitse kaikki", this );
-            m_selectAllButton->setCheckable( true );
-            m_selectAllButton->setFixedHeight( 22 );
-            arvoHeader->addWidget( m_selectAllButton );
             layout->addLayout( arvoHeader );
         }
         m_listWidget = new QTreeWidget( this );
@@ -317,7 +357,15 @@ namespace MaastoPlugin
             actionButton->setIcon(
                 QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
         } );
-        buttonRow->addWidget( actionButton );
+
+        // Iso nappi + "Luokittele"-teksti allekkain
+        QVBoxLayout *actionCol = new QVBoxLayout();
+        actionCol->setAlignment( Qt::AlignHCenter );
+        actionCol->addWidget( actionButton );
+        QLabel *actionLabel = new QLabel( "Luokittele", this );
+        actionLabel->setAlignment( Qt::AlignHCenter );
+        actionCol->addWidget( actionLabel );
+        buttonRow->addLayout( actionCol );
 
         layout->addLayout( buttonRow );
 
@@ -348,21 +396,47 @@ namespace MaastoPlugin
         QFormLayout *distForm = new QFormLayout();
         distForm->setContentsMargins( 0, 4, 0, 4 );
 
-        m_nearDistSpinBox = new QDoubleSpinBox( this );
-        m_nearDistSpinBox->setRange( 0.1, 9999.0 );
-        m_nearDistSpinBox->setSingleStep( 0.5 );
-        m_nearDistSpinBox->setValue( 10.0 );
-        m_nearDistSpinBox->setSuffix( " m" );
-        m_nearDistSpinBox->setDecimals( 1 );
-        distForm->addRow( "Lähin etäisyys:", m_nearDistSpinBox );
+        // Near: spinbox + Mittaa-nappi
+        {
+            m_nearDistSpinBox = new QDoubleSpinBox( this );
+            m_nearDistSpinBox->setRange( 0.1, 9999.0 );
+            m_nearDistSpinBox->setSingleStep( 0.5 );
+            m_nearDistSpinBox->setValue( 10.0 );
+            m_nearDistSpinBox->setSuffix( " m" );
+            m_nearDistSpinBox->setDecimals( 1 );
 
-        m_farDistSpinBox = new QDoubleSpinBox( this );
-        m_farDistSpinBox->setRange( 0.1, 9999.0 );
-        m_farDistSpinBox->setSingleStep( 0.5 );
-        m_farDistSpinBox->setValue( 1000.0 );
-        m_farDistSpinBox->setSuffix( " m" );
-        m_farDistSpinBox->setDecimals( 1 );
-        distForm->addRow( "Pisin etäisyys:", m_farDistSpinBox );
+            m_measureNearButton = new QPushButton( "Mittaa", this );
+            m_measureNearButton->setCheckable( true );
+            m_measureNearButton->setFixedWidth( 60 );
+
+            QWidget     *nearContainer = new QWidget( this );
+            QHBoxLayout *nearRow       = new QHBoxLayout( nearContainer );
+            nearRow->setContentsMargins( 0, 0, 0, 0 );
+            nearRow->addWidget( m_nearDistSpinBox );
+            nearRow->addWidget( m_measureNearButton );
+            distForm->addRow( "Lähin etäisyys:", nearContainer );
+        }
+
+        // Far: spinbox + Mittaa-nappi
+        {
+            m_farDistSpinBox = new QDoubleSpinBox( this );
+            m_farDistSpinBox->setRange( 0.1, 9999.0 );
+            m_farDistSpinBox->setSingleStep( 0.5 );
+            m_farDistSpinBox->setValue( 1000.0 );
+            m_farDistSpinBox->setSuffix( " m" );
+            m_farDistSpinBox->setDecimals( 1 );
+
+            m_measureFarButton = new QPushButton( "Mittaa", this );
+            m_measureFarButton->setCheckable( true );
+            m_measureFarButton->setFixedWidth( 60 );
+
+            QWidget     *farContainer = new QWidget( this );
+            QHBoxLayout *farRow       = new QHBoxLayout( farContainer );
+            farRow->setContentsMargins( 0, 0, 0, 0 );
+            farRow->addWidget( m_farDistSpinBox );
+            farRow->addWidget( m_measureFarButton );
+            distForm->addRow( "Pisin etäisyys:", farContainer );
+        }
 
         layout->addLayout( distForm );
 
@@ -379,6 +453,78 @@ namespace MaastoPlugin
                 if ( val <= m_nearDistSpinBox->value() )
                     m_nearDistSpinBox->setValue( val - 1.0 );
             } );
+
+        // Mittaa-napit: near ja far
+        connect( m_measureNearButton, &QPushButton::clicked, this, [this]( bool checked )
+        {
+            if ( checked )
+            {
+                // Jos far-mittaus käynnissä, pysäytä se ensin
+                if ( m_measureState > 0 && !m_measuringNear )
+                    stopMeasure();
+                startMeasure( true );
+            }
+            else
+            {
+                // Nappia painettu uudelleen → hyväksy piste jos se on valittu
+                if ( m_measureState == 2 && m_measuringNear )
+                {
+                    // Laske etäisyys kamerasta
+                    ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+                    if ( win )
+                    {
+                        CCVector3d cam = win->getViewportParameters()
+                            .computeViewMatrix().inverse().getTranslationAsVec3D();
+                        double dx = m_measuredX - cam.x;
+                        double dy = m_measuredY - cam.y;
+                        double dz = m_measuredZ - cam.z;
+                        double dist = std::sqrt( dx*dx + dy*dy + dz*dz );
+                        m_nearDistSpinBox->blockSignals( true );
+                        m_nearDistSpinBox->setValue( dist );
+                        m_nearDistSpinBox->blockSignals( false );
+                    }
+                    stopMeasure();
+                }
+                else
+                {
+                    stopMeasure();
+                }
+            }
+        } );
+
+        connect( m_measureFarButton, &QPushButton::clicked, this, [this]( bool checked )
+        {
+            if ( checked )
+            {
+                if ( m_measureState > 0 && m_measuringNear )
+                    stopMeasure();
+                startMeasure( false );
+            }
+            else
+            {
+                if ( m_measureState == 2 && !m_measuringNear )
+                {
+                    ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+                    if ( win )
+                    {
+                        CCVector3d cam = win->getViewportParameters()
+                            .computeViewMatrix().inverse().getTranslationAsVec3D();
+                        double dx = m_measuredX - cam.x;
+                        double dy = m_measuredY - cam.y;
+                        double dz = m_measuredZ - cam.z;
+                        double dist = std::sqrt( dx*dx + dy*dy + dz*dz );
+                        m_farDistSpinBox->blockSignals( true );
+                        m_farDistSpinBox->setValue( dist );
+                        m_farDistSpinBox->blockSignals( false );
+                    }
+                    stopMeasure();
+                }
+                else
+                {
+                    stopMeasure();
+                }
+            }
+        } );
 
         // Polygon-piirto: nappi toggleataan ON/OFF
         connect( m_polygonButton, &QPushButton::toggled, this, [this]( bool checked )
@@ -463,8 +609,7 @@ namespace MaastoPlugin
         {
             m_classDefinitions.clear();
             m_classCounts.clear();
-            m_ptcFileLabel->setText( "" );
-            m_ptcFileLabel->setVisible( false );
+            m_ptcFilePath = "";
         }
 
         QString keepValues      = m_valuesComboBox->currentText();
@@ -1008,16 +1153,21 @@ namespace MaastoPlugin
         for ( unsigned idx : matchIndices )
             highlighted->addPoint( *m_cloud->getPoint( idx ) );
 
-        // Keltainen väri
+        // Highlight-väri asetuksista
         if ( highlighted->reserveTheRGBTable() )
         {
+            const ccColor::Rgba col(
+                static_cast<ColorCompType>( m_highlightColor.red() ),
+                static_cast<ColorCompType>( m_highlightColor.green() ),
+                static_cast<ColorCompType>( m_highlightColor.blue() ),
+                ccColor::MAX );
             for ( std::size_t i = 0; i < matchIndices.size(); ++i )
-                highlighted->addColor( ccColor::Rgba( 255, 255, 0, 255 ) );
+                highlighted->addColor( col );
             highlighted->showColors( true );
         }
 
-        const unsigned char origSize = m_cloud->getPointSize();
-        highlighted->setPointSize( origSize > 0 ? origSize + 2 : 3 );
+        // Highlight-pisteiden koko asetuksista
+        highlighted->setPointSize( static_cast<unsigned>( m_highlightPointSize ) );
 
         return highlighted;
     }
@@ -1330,9 +1480,7 @@ namespace MaastoPlugin
 
         m_classDefinitions = defs;
 
-        // Näytä polku Read-napin alla
-        m_ptcFileLabel->setText( filePath );
-        m_ptcFileLabel->setVisible( true );
+        m_ptcFilePath = filePath;
 
         // Päivitä Luokat-lista
         populateValueList( m_valuesComboBox->currentText() );
@@ -1375,6 +1523,124 @@ namespace MaastoPlugin
 
         const QString ptcPath = dir.absoluteFilePath( ptcFiles.first() );
         loadPtcFile( ptcPath );
+    }
+
+    // ----------------------------------------------------------------
+    // Mittaa: startMeasure / stopMeasure / removeMeasureHighlight
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::removeMeasureHighlight()
+    {
+        if ( m_measureHighlight )
+        {
+            m_appInterface->removeFromDB( m_measureHighlight );  // autoDelete=true poistaa muistin
+            m_measureHighlight = nullptr;
+            ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+            if ( win )
+                win->redraw();
+        }
+    }
+
+    void MaastoDialog::startMeasure( bool isNear )
+    {
+        m_measuringNear = isNear;
+        m_measureState  = 1;  // odottaa pistettä
+
+        // Poista mahdollinen vanha highlight
+        removeMeasureHighlight();
+
+        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        if ( !win )
+        {
+            stopMeasure();
+            return;
+        }
+
+        // Aktivoi point picking
+        win->setPickingMode( ccGLWindowInterface::POINT_PICKING );
+
+        // Yhdistä itemPicked-signaali: jokainen klikkaus päivittää mittauspisteen
+        // Picking ja signaali pysyvät voimassa kunnes käyttäjä painaa "Hyväksy"
+        connect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,
+            this, [this, win]( ccHObject *entity, unsigned /*itemIdx*/,
+                               int /*x*/, int /*y*/,
+                               const CCVector3 &P, const CCVector3d & /*uvw*/ )
+            {
+                Q_UNUSED( entity )
+
+                // Tallenna valittu piste
+                m_measuredX = static_cast<double>( P.x );
+                m_measuredY = static_cast<double>( P.y );
+                m_measuredZ = static_cast<double>( P.z );
+                m_measureState = 2;  // piste valittu, odottaa hyväksyntää
+
+                // Päivitä highlight-piste (poista vanha, luo uusi)
+                removeMeasureHighlight();
+                ccPointCloud *dot = new ccPointCloud( "MeasurePoint" );
+                dot->reserve( 1 );
+                dot->addPoint( P );
+                dot->setColor( ccColor::Rgb(
+                    static_cast<ColorCompType>( m_measurePointColor.red() ),
+                    static_cast<ColorCompType>( m_measurePointColor.green() ),
+                    static_cast<ColorCompType>( m_measurePointColor.blue() ) ) );
+                dot->showColors( true );
+                dot->showSF( false );
+                dot->setPointSize( static_cast<unsigned>( m_measurePointSize ) );
+                m_appInterface->addToDB( dot, false, true, false );
+                m_measureHighlight = dot;
+                win->redraw();
+
+                // Laske etäisyys kamerasta ja tulosta consoleen heti
+                CCVector3d cam = win->getViewportParameters()
+                    .computeViewMatrix().inverse().getTranslationAsVec3D();
+                double dx   = m_measuredX - cam.x;
+                double dy   = m_measuredY - cam.y;
+                double dz   = m_measuredZ - cam.z;
+                double dist = std::sqrt( dx*dx + dy*dy + dz*dz );
+                const QString label = m_measuringNear ? "Lähin etäisyys" : "Pisin etäisyys";
+                m_appInterface->dispToConsole(
+                    QString( "MaastoPlugin: %1 = %2 m" ).arg( label ).arg( dist, 0, 'f', 2 ),
+                    ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+                // Päivitä napin teksti → "Hyväksy"
+                QPushButton *btn = m_measuringNear ? m_measureNearButton : m_measureFarButton;
+                if ( btn )
+                    btn->setText( "Hyväksy" );
+            },
+            Qt::UniqueConnection
+        );
+    }
+
+    void MaastoDialog::stopMeasure()
+    {
+        // Irrota signaali tarvittaessa
+        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        if ( win )
+        {
+            disconnect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,
+                        this, nullptr );
+            win->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
+        }
+
+        removeMeasureHighlight();
+
+        m_measureState = 0;
+
+        // Palauta napit normaaliksi
+        if ( m_measureNearButton )
+        {
+            m_measureNearButton->blockSignals( true );
+            m_measureNearButton->setChecked( false );
+            m_measureNearButton->setText( "Mittaa" );
+            m_measureNearButton->blockSignals( false );
+        }
+        if ( m_measureFarButton )
+        {
+            m_measureFarButton->blockSignals( true );
+            m_measureFarButton->setChecked( false );
+            m_measureFarButton->setText( "Mittaa" );
+            m_measureFarButton->blockSignals( false );
+        }
     }
 
     // ----------------------------------------------------------------

@@ -3,6 +3,7 @@ target_sources( ${PROJECT_NAME}
         ${CMAKE_CURRENT_LIST_DIR}/ClassDefinition.h
         ${CMAKE_CURRENT_LIST_DIR}/MaastoAction.h
         ${CMAKE_CURRENT_LIST_DIR}/PolygonDrawer.h
+        ${CMAKE_CURRENT_LIST_DIR}/SettingsDialog.h
         ${CMAKE_CURRENT_LIST_DIR}/VolumeBuilder.h
         ${CMAKE_CURRENT_LIST_DIR}/qMaastoPlugin.h
 )

@@ -7,6 +7,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLabel>
+#include <QColor>
 #include <QSet>
 #include <QMap>
 #include <vector>
@@ -62,12 +63,17 @@ namespace MaastoPlugin
         // Lataa .ptc-tiedoston ja päivittää UI:n
         void loadPtcFile( const QString &filePath );
 
+        // Mittaus: piste valitaan 3D-ikkunasta
+        // state: 0=ei mittausta, 1=odottaa pistettä, 2=piste valittu (odottaa hyväksyntää)
+        void startMeasure( bool isNear );
+        void stopMeasure();
+        void removeMeasureHighlight();
+
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
-        // Read class definition file -nappi ja polkunäyttö
-        QPushButton        *m_readFileButton;
-        QLabel             *m_ptcFileLabel;
+        // Polku ladatulle .ptc-tiedostolle (päivitetään loadPtcFile:ssa)
+        QString             m_ptcFilePath;
 
         QComboBox          *m_valuesComboBox;
         QTreeWidget        *m_listWidget;
@@ -87,12 +93,33 @@ namespace MaastoPlugin
 
         QMap<QString, bool> m_showStates;   // arvo → Show-tila (true=näkyvä)
 
+        // Highlight-asetukset
+        int                 m_highlightPointSize;
+        QColor              m_highlightColor;
+
+        // Mittauspisteen asetukset
+        int                 m_measurePointSize;
+        QColor              m_measurePointColor;
+
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
+        QPushButton        *m_fileButton;
         QSpinBox           *m_minPolygonCountSpinBox;
 
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
+
+        // Mittaa-napit (near ja far)
+        QPushButton        *m_measureNearButton;
+        QPushButton        *m_measureFarButton;
+
+        // Mittaustila: 0=ei mittausta, 1=odottaa pistettä, 2=piste valittu
+        int                 m_measureState;   // 0/1/2
+        bool                m_measuringNear;  // true=near, false=far
+        double              m_measuredX;      // valitun pisteen koordinaatti
+        double              m_measuredY;
+        double              m_measuredZ;
+        ccHObject          *m_measureHighlight; // punainen väliaikainen piste
 
         QMap<int, ClassDefinition> m_classDefinitions;
         QMap<int, int>             m_classCounts;
