@@ -3,6 +3,8 @@
 #include "PolygonDrawer.h"
 #include <vector>
 
+#include "CCGeom.h"
+
 class ccMesh;
 class ccPointCloud;
 class ccGLWindowInterface;
@@ -36,4 +38,28 @@ public:
         double                                      nearDist,
         double                                      farDist,
         std::vector<unsigned>*                      outIndices = nullptr );
+
+    // Rakentaa suorakaiteisen "seinä"-meshin kahdesta 3D-pisteestä ekstruoimalla
+    // globaalin akselin suuntaan ±halfExtent metriä.
+    // axis       : 'X', 'Y' tai 'Z' — ekstruusioakseli
+    // halfExtent : puoli-ulottuvuus akselin suuntaan (default 10 000 m)
+    // Palauttaa uuden ccMesh-olion tai nullptr jos epäonnistuu.
+    static ccMesh* buildFromLine( const CCVector3& p1,
+                                  const CCVector3& p2,
+                                  char             axis,
+                                  double           thickness,
+                                  double           halfExtent = 10000.0 );
+
+    // Etsii pistepilvestä pisteet jotka ovat "viiva+akseli"-kappaleen sisällä.
+    // Testi: piste hyväksytään jos sen etäisyys viivasta (akselin suuntainen
+    // komponentti jätetty pois) on ≤ halfThickness ja sen projektio viivalle
+    // on välillä [0, viivan pituus].
+    // outIndices: täytetään löydetyillä pisteindekseillä.
+    static void highlightPointsInsideLineVolume(
+        const CCVector3&       p1,
+        const CCVector3&       p2,
+        char                   axis,
+        ccPointCloud*          cloud,
+        double                 thickness,
+        std::vector<unsigned>* outIndices );
 };

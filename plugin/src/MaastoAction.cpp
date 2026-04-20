@@ -28,6 +28,7 @@
 #include <QHeaderView>
 #include <QDir>
 #include <QRegularExpression>
+#include <QCheckBox>
 #include <QIcon>
 #include <QMap>
 #include <map>
@@ -148,6 +149,16 @@ namespace MaastoPlugin
         , m_measureHighlight( nullptr )
         , m_showOnlyMode( false )
         , m_selectionOnlyCloud( nullptr )
+        , m_drawLineButton( nullptr )
+        , m_lineAxisComboBox( nullptr )
+        , m_lineThicknessSpinBox( nullptr )
+        , m_copyLineRightButton( nullptr )
+        , m_extendLineToBBoxCheckBox( nullptr )
+        , m_linePickState( 0 )
+        , m_lineP1( 0.0f, 0.0f, 0.0f )
+        , m_lineP2( 0.0f, 0.0f, 0.0f )
+        , m_linePoint1Highlight( nullptr )
+        , m_linePoint2Highlight( nullptr )
     {
         // Käytä 3D-ikkunan pistekokoa highlight- ja mittauspiste-defaultina
         {
@@ -357,6 +368,29 @@ namespace MaastoPlugin
         m_polygonButton->setCheckable( true );
         polygonCol->addWidget( m_polygonButton );
 
+        // Piirrä viiva -nappi + akseli-combobox samalla rivillä
+        {
+            QHBoxLayout *lineRow = new QHBoxLayout();
+            lineRow->setContentsMargins( 0, 0, 0, 0 );
+
+            m_drawLineButton = new QPushButton( "Piirrä viiva", this );
+            m_drawLineButton->setCheckable( true );
+            lineRow->addWidget( m_drawLineButton );
+
+            m_lineAxisComboBox = new QComboBox( this );
+            m_lineAxisComboBox->addItem( "Z" );
+            m_lineAxisComboBox->addItem( "X" );
+            m_lineAxisComboBox->addItem( "Y" );
+            m_lineAxisComboBox->setFixedWidth( 48 );
+            lineRow->addWidget( m_lineAxisComboBox );
+
+            m_copyLineRightButton = new QPushButton( "Kopioi oikealle", this );
+            m_copyLineRightButton->setEnabled( false );  // disabloitu kunnes viiva on piirretty
+            lineRow->addWidget( m_copyLineRightButton );
+
+            polygonCol->addLayout( lineRow );
+        }
+
         m_showOnlyButton = new QPushButton( "Näytä vain valinta", this );
         m_showOnlyButton->setCheckable( true );
         m_showOnlyButton->setEnabled( false );   // disabloitu kunnes on valinta
@@ -462,6 +496,26 @@ namespace MaastoPlugin
             farRow->addWidget( m_farDistSpinBox );
             farRow->addWidget( m_measureFarButton );
             distForm->addRow( "Pisin etäisyys:", farContainer );
+        }
+
+        // Viivatyökalun paksuus + "Jatka viivan pituutta" -täppä samalla rivillä
+        {
+            m_lineThicknessSpinBox = new QDoubleSpinBox( this );
+            m_lineThicknessSpinBox->setRange( 0.01, 9999.0 );
+            m_lineThicknessSpinBox->setSingleStep( 0.1 );
+            m_lineThicknessSpinBox->setValue( 1.0 );
+            m_lineThicknessSpinBox->setSuffix( " m" );
+            m_lineThicknessSpinBox->setDecimals( 2 );
+
+            m_extendLineToBBoxCheckBox = new QCheckBox( "Jatka viivan pituutta", this );
+            m_extendLineToBBoxCheckBox->setChecked( false );
+
+            QWidget     *thickContainer = new QWidget( this );
+            QHBoxLayout *thickRow       = new QHBoxLayout( thickContainer );
+            thickRow->setContentsMargins( 0, 0, 0, 0 );
+            thickRow->addWidget( m_lineThicknessSpinBox );
+            thickRow->addWidget( m_extendLineToBBoxCheckBox );
+            distForm->addRow( "Viivatyökalun paksuus:", thickContainer );
         }
 
         layout->addLayout( distForm );
@@ -572,9 +626,45 @@ namespace MaastoPlugin
         connect( m_polygonButton, &QPushButton::toggled, this, [this]( bool checked )
         {
             if ( checked )
+            {
+                // Pysäytä viiva-työkalu jos käynnissä
+                if ( m_linePickState > 0 )
+                    stopLinePicking();
+                m_drawLineButton->blockSignals( true );
+                m_drawLineButton->setChecked( false );
+                m_drawLineButton->blockSignals( false );
+
                 m_polygonDrawer->startDrawing();
+            }
             else
+            {
                 m_polygonDrawer->stopDrawing();
+            }
+        } );
+
+        // Kopioi oikealle
+        connect( m_copyLineRightButton, &QPushButton::clicked, this, [this]()
+        {
+            copyLineRight();
+        } );
+
+        // Viiva-työkalu: nappi toggleataan ON/OFF
+        connect( m_drawLineButton, &QPushButton::toggled, this, [this]( bool checked )
+        {
+            if ( checked )
+            {
+                // Pysäytä polygon-piirto jos käynnissä
+                m_polygonDrawer->stopDrawing();
+                m_polygonButton->blockSignals( true );
+                m_polygonButton->setChecked( false );
+                m_polygonButton->blockSignals( false );
+
+                startLinePicking();
+            }
+            else
+            {
+                stopLinePicking();
+            }
         } );
 
         // Kun polygon suljetaan: rakenna 3D-kappale ja aloita uusi piirto
@@ -1182,6 +1272,17 @@ namespace MaastoPlugin
         m_polygonButton->blockSignals( true );
         m_polygonButton->setChecked( false );
         m_polygonButton->blockSignals( false );
+
+        // 8. Pysäytä viiva-työkalu jos käynnissä
+        stopLinePicking();
+        if ( m_drawLineButton )
+        {
+            m_drawLineButton->blockSignals( true );
+            m_drawLineButton->setChecked( false );
+            m_drawLineButton->blockSignals( false );
+        }
+        if ( m_copyLineRightButton )
+            m_copyLineRightButton->setEnabled( false );
 
         m_appInterface->dispToConsole(
             "MaastoPlugin: valinta poistettu",
@@ -1812,6 +1913,18 @@ namespace MaastoPlugin
 
     void MaastoDialog::startMeasure( bool isNear )
     {
+        // Pysäytä viiva-työkalu jos käynnissä
+        if ( m_linePickState > 0 )
+        {
+            stopLinePicking();
+            if ( m_drawLineButton )
+            {
+                m_drawLineButton->blockSignals( true );
+                m_drawLineButton->setChecked( false );
+                m_drawLineButton->blockSignals( false );
+            }
+        }
+
         m_measuringNear = isNear;
         m_measureState  = 1;  // odottaa pistettä
 
@@ -1910,6 +2023,380 @@ namespace MaastoPlugin
             m_measureFarButton->setText( "Mittaa" );
             m_measureFarButton->blockSignals( false );
         }
+    }
+
+    // ----------------------------------------------------------------
+    // removeLineHighlights
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::removeLineHighlights()
+    {
+        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+
+        if ( m_linePoint1Highlight )
+        {
+            m_appInterface->removeFromDB( m_linePoint1Highlight );
+            m_linePoint1Highlight = nullptr;
+        }
+        if ( m_linePoint2Highlight )
+        {
+            m_appInterface->removeFromDB( m_linePoint2Highlight );
+            m_linePoint2Highlight = nullptr;
+        }
+        if ( win )
+            win->redraw();
+    }
+
+    // ----------------------------------------------------------------
+    // startLinePicking
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::startLinePicking()
+    {
+        // Pysäytä mittaustyökalu jos käynnissä (molemmat käyttävät POINT_PICKING)
+        if ( m_measureState > 0 )
+            stopMeasure();
+
+        removeLineHighlights();
+        m_linePickState = 1;
+
+        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        if ( !win )
+        {
+            stopLinePicking();
+            return;
+        }
+
+        win->setPickingMode( ccGLWindowInterface::POINT_PICKING );
+
+        connect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,
+            this, [this, win]( ccHObject *entity, unsigned /*itemIdx*/,
+                               int /*x*/, int /*y*/,
+                               const CCVector3 &P, const CCVector3d & /*uvw*/ )
+            {
+                Q_UNUSED( entity )
+
+                // Luo highlight-dot valitulle pisteelle (sama tyyli kuin mittaus)
+                auto makeDot = [&]( const CCVector3 &pt ) -> ccHObject*
+                {
+                    ccPointCloud *dot = new ccPointCloud( "LinePoint" );
+                    dot->reserve( 1 );
+                    dot->addPoint( pt );
+                    dot->setColor( ccColor::Rgb(
+                        static_cast<ColorCompType>( m_measurePointColor.red() ),
+                        static_cast<ColorCompType>( m_measurePointColor.green() ),
+                        static_cast<ColorCompType>( m_measurePointColor.blue() ) ) );
+                    dot->showColors( true );
+                    dot->showSF( false );
+                    dot->setPointSize( static_cast<unsigned>( m_measurePointSize ) );
+                    m_appInterface->addToDB( dot, false, true, false );
+                    return dot;
+                };
+
+                if ( m_linePickState == 1 )
+                {
+                    // Ensimmäinen piste
+                    m_lineP1 = P;
+                    if ( m_linePoint1Highlight )
+                        m_appInterface->removeFromDB( m_linePoint1Highlight );
+                    m_linePoint1Highlight = makeDot( P );
+                    m_linePickState = 2;
+
+                    m_appInterface->dispToConsole(
+                        QString( "MaastoPlugin: viivan 1. piste valittu (%1, %2, %3)" )
+                            .arg( P.x, 0, 'f', 3 )
+                            .arg( P.y, 0, 'f', 3 )
+                            .arg( P.z, 0, 'f', 3 ),
+                        ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+                    win->redraw();
+                }
+                else if ( m_linePickState == 2 )
+                {
+                    // Toinen piste — viiva valmis
+                    m_lineP2 = P;
+                    if ( m_linePoint2Highlight )
+                        m_appInterface->removeFromDB( m_linePoint2Highlight );
+                    m_linePoint2Highlight = makeDot( P );
+
+                    m_appInterface->dispToConsole(
+                        QString( "MaastoPlugin: viivan 2. piste valittu (%1, %2, %3)" )
+                            .arg( P.x, 0, 'f', 3 )
+                            .arg( P.y, 0, 'f', 3 )
+                            .arg( P.z, 0, 'f', 3 ),
+                        ccMainAppInterface::STD_CONSOLE_MESSAGE );
+
+                    win->redraw();
+
+                    // Rakenna viivakappale ja laske pisteet
+                    processLine();
+
+                    // Poista väliaikaiset highlight-dotit (mesh jää näkyviin)
+                    removeLineHighlights();
+
+                    // Aloita uusi viiva automaattisesti
+                    m_linePickState = 1;
+                }
+            },
+            Qt::UniqueConnection
+        );
+    }
+
+    // ----------------------------------------------------------------
+    // stopLinePicking
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::stopLinePicking()
+    {
+        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        if ( win )
+        {
+            disconnect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,
+                        this, nullptr );
+            win->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
+        }
+
+        removeLineHighlights();
+        m_linePickState = 0;
+    }
+
+    // ----------------------------------------------------------------
+    // processLine
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::processLine()
+    {
+        if ( !m_cloud )
+            return;
+
+        // Hae akseli ja paksuus UI:sta
+        const QString axisStr = m_lineAxisComboBox ? m_lineAxisComboBox->currentText() : "Z";
+        const char    axis    = axisStr.isEmpty() ? 'Z' : axisStr.at( 0 ).toLatin1();
+        const double  thickness = m_lineThicknessSpinBox
+                                  ? m_lineThicknessSpinBox->value()
+                                  : 1.0;
+
+        // Mahdollisesti laajennetaan viiva bounding boxin rajoille
+        CCVector3 p1 = m_lineP1;
+        CCVector3 p2 = m_lineP2;
+        if ( m_extendLineToBBoxCheckBox && m_extendLineToBBoxCheckBox->isChecked() )
+            extendLineToBBox( p1, p2 );
+
+        // Päivitä m_lineP1/P2 (laajennettu tai alkuperäinen) → copyLineRight käyttää näitä
+        m_lineP1 = p1;
+        m_lineP2 = p2;
+
+        // Rakenna boksi-mesh (kokonaan oikealle puolelle viivasta)
+        ccMesh *mesh = VolumeBuilder::buildFromLine( p1, p2, axis, thickness, 10000.0 );
+        if ( mesh )
+        {
+            m_appInterface->addToDB( mesh );
+            m_meshObjects.push_back( mesh );
+        }
+        else
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: viiva-kappaleen luonti epäonnistui",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+        }
+
+        // Kerää pisteet jotka ovat viivan oikealla puolella paksuuden verran
+        std::vector<unsigned> indices;
+        VolumeBuilder::highlightPointsInsideLineVolume(
+            p1, p2, axis, m_cloud, thickness, &indices );
+
+        if ( !indices.empty() )
+        {
+            for ( unsigned idx : indices )
+                m_indexHitCount[idx]++;
+        }
+        else
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: viivan sisällä ei pisteitä — kokeile suurempaa paksuutta",
+                ccMainAppInterface::STD_CONSOLE_MESSAGE );
+        }
+
+        // Aktivoi "Kopioi oikealle" -nappi
+        if ( m_copyLineRightButton )
+            m_copyLineRightButton->setEnabled( true );
+
+        refreshHighlights();
+    }
+
+    // ----------------------------------------------------------------
+    // extendLineToBBox
+    // Laajentaa viivan (p1→p2) pistepilven bounding boxin rajoille
+    // viivan suunnassa käyttäen ray-AABB slab-intersection -algoritmia.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::extendLineToBBox( CCVector3& p1, CCVector3& p2 ) const
+    {
+        if ( !m_cloud )
+            return;
+
+        ccBBox bb = m_cloud->getOwnBB();
+        if ( !bb.isValid() )
+            return;
+
+        const CCVector3d p1d( static_cast<double>( p1.x ),
+                              static_cast<double>( p1.y ),
+                              static_cast<double>( p1.z ) );
+        const CCVector3d p2d( static_cast<double>( p2.x ),
+                              static_cast<double>( p2.y ),
+                              static_cast<double>( p2.z ) );
+
+        const CCVector3d lineVec = p2d - p1d;
+        const double lineLen = lineVec.norm();
+        if ( lineLen < 1e-10 )
+            return;
+
+        const CCVector3d dir = lineVec / lineLen;
+
+        const CCVector3d bbMin( static_cast<double>( bb.minCorner().x ),
+                                static_cast<double>( bb.minCorner().y ),
+                                static_cast<double>( bb.minCorner().z ) );
+        const CCVector3d bbMax( static_cast<double>( bb.maxCorner().x ),
+                                static_cast<double>( bb.maxCorner().y ),
+                                static_cast<double>( bb.maxCorner().z ) );
+
+        // Ray-AABB slab intersection
+        // Säde: p1d + t * dir
+        // Etsitään t_min (taaksepäin) ja t_max (eteenpäin) jotka kattavat koko bb:n
+        double tMin = -1e18;
+        double tMax =  1e18;
+
+        for ( int i = 0; i < 3; ++i )
+        {
+            if ( std::abs( dir.u[i] ) < 1e-10 )
+            {
+                // Säde on lähes yhdensuuntainen tämän akselin kanssa
+                // Jos p1 on bounding boxin ulkopuolella tällä akselilla → ei leikkausta
+                if ( p1d.u[i] < bbMin.u[i] || p1d.u[i] > bbMax.u[i] )
+                    return;  // ei leikkausta → jätetään alkuperäiset pisteet
+            }
+            else
+            {
+                const double t1 = ( bbMin.u[i] - p1d.u[i] ) / dir.u[i];
+                const double t2 = ( bbMax.u[i] - p1d.u[i] ) / dir.u[i];
+                tMin = std::max( tMin, std::min( t1, t2 ) );
+                tMax = std::min( tMax, std::max( t1, t2 ) );
+            }
+        }
+
+        if ( tMin > tMax )
+            return;  // ei leikkausta → jätetään alkuperäiset pisteet
+
+        // Uudet pisteet bounding boxin rajoilla
+        const CCVector3d newP1d = p1d + dir * tMin;
+        const CCVector3d newP2d = p1d + dir * tMax;
+
+        p1 = CCVector3( static_cast<float>( newP1d.x ),
+                        static_cast<float>( newP1d.y ),
+                        static_cast<float>( newP1d.z ) );
+        p2 = CCVector3( static_cast<float>( newP2d.x ),
+                        static_cast<float>( newP2d.y ),
+                        static_cast<float>( newP2d.z ) );
+    }
+
+    // ----------------------------------------------------------------
+    // copyLineRight
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::copyLineRight()
+    {
+        if ( !m_cloud )
+            return;
+
+        const QString axisStr = m_lineAxisComboBox ? m_lineAxisComboBox->currentText() : "Z";
+        const char    axis    = axisStr.isEmpty() ? 'Z' : axisStr.at( 0 ).toLatin1();
+        const double  thickness = m_lineThicknessSpinBox
+                                  ? m_lineThicknessSpinBox->value()
+                                  : 1.0;
+
+        // Laske thickDir — sama kuin VolumeBuilder:ssa
+        CCVector3d axisDir( 0.0, 0.0, 0.0 );
+        if      ( axis == 'X' || axis == 'x' ) axisDir.x = 1.0;
+        else if ( axis == 'Y' || axis == 'y' ) axisDir.y = 1.0;
+        else                                   axisDir.z = 1.0;
+
+        const CCVector3d p1d( static_cast<double>( m_lineP1.x ),
+                              static_cast<double>( m_lineP1.y ),
+                              static_cast<double>( m_lineP1.z ) );
+        const CCVector3d p2d( static_cast<double>( m_lineP2.x ),
+                              static_cast<double>( m_lineP2.y ),
+                              static_cast<double>( m_lineP2.z ) );
+
+        const CCVector3d lineVec = p2d - p1d;
+        const double lineLen = lineVec.norm();
+        if ( lineLen < 1e-10 )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: ei viivaa kopioitavaksi",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        const CCVector3d lineDirNorm = lineVec / lineLen;
+        CCVector3d thickDir = lineDirNorm.cross( axisDir );
+        const double thickDirLen = thickDir.norm();
+        if ( thickDirLen < 1e-10 )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: viiva yhdensuuntainen akselin kanssa, kopiointia ei voi tehdä",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+        thickDir /= thickDirLen;
+
+        // Siirrä P1 ja P2 yhden paksuuden verran oikealle
+        const CCVector3d shift = thickDir * thickness;
+        const CCVector3d newP1d = p1d + shift;
+        const CCVector3d newP2d = p2d + shift;
+
+        const CCVector3 newP1( static_cast<float>( newP1d.x ),
+                               static_cast<float>( newP1d.y ),
+                               static_cast<float>( newP1d.z ) );
+        const CCVector3 newP2( static_cast<float>( newP2d.x ),
+                               static_cast<float>( newP2d.y ),
+                               static_cast<float>( newP2d.z ) );
+
+        // Rakenna uusi mesh siirretyillä pisteillä
+        ccMesh *mesh = VolumeBuilder::buildFromLine( newP1, newP2, axis, thickness, 10000.0 );
+        if ( mesh )
+        {
+            m_appInterface->addToDB( mesh );
+            m_meshObjects.push_back( mesh );
+        }
+        else
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: kopiointi epäonnistui",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+        }
+
+        // Kerää pisteet uuden muodon sisältä
+        std::vector<unsigned> indices;
+        VolumeBuilder::highlightPointsInsideLineVolume(
+            newP1, newP2, axis, m_cloud, thickness, &indices );
+
+        if ( !indices.empty() )
+        {
+            for ( unsigned idx : indices )
+                m_indexHitCount[idx]++;
+        }
+        else
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: kopion sisällä ei pisteitä",
+                ccMainAppInterface::STD_CONSOLE_MESSAGE );
+        }
+
+        // Päivitä m_lineP1/P2 uusiksi → seuraava kopioi jatkaa siitä
+        m_lineP1 = newP1;
+        m_lineP2 = newP2;
+
+        refreshHighlights();
     }
 
     // ----------------------------------------------------------------

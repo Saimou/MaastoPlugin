@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QTreeWidget>
 #include <QPushButton>
@@ -14,6 +15,7 @@
 #include <map>
 
 #include "ClassDefinition.h"
+#include "CCGeom.h"
 
 class ccMainAppInterface;
 class ccPointCloud;
@@ -76,6 +78,15 @@ namespace MaastoPlugin
         void startMeasure( bool isNear );
         void stopMeasure();
         void removeMeasureHighlight();
+
+        // Viiva-työkalu: pisteet valitaan pistepoiminnalla kuten mittaus
+        // pickState: 0=ei aktiivinen, 1=odottaa 1.pistettä, 2=odottaa 2.pistettä
+        void startLinePicking();
+        void stopLinePicking();
+        void removeLineHighlights();
+        void processLine();
+        void copyLineRight();
+        void extendLineToBBox( CCVector3& p1, CCVector3& p2 ) const;
 
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
@@ -142,6 +153,19 @@ namespace MaastoPlugin
         bool                      m_showOnlyMode;       // onko tila päällä
         ccPointCloud             *m_selectionOnlyCloud; // väliaikainen pilvi "vain valinta" -tilaan
         std::vector<unsigned>     m_selectionIndices;   // valittujen pisteiden indeksit m_cloud:ssa
+
+        // Viiva-työkalu
+        QPushButton        *m_drawLineButton;        // "Piirrä viiva" checkable toggle
+        QComboBox          *m_lineAxisComboBox;      // "X" / "Y" / "Z"
+        QDoubleSpinBox     *m_lineThicknessSpinBox;  // paksuus metreissä, default 1.0
+        QPushButton        *m_copyLineRightButton;   // "Kopioi oikealle"
+        QCheckBox          *m_extendLineToBBoxCheckBox; // "Jatka viivan pituutta"
+
+        int                 m_linePickState;          // 0=ei aktiivinen, 1=odottaa P1, 2=odottaa P2
+        CCVector3           m_lineP1;                 // 1. valittu piste 3D-maailmassa
+        CCVector3           m_lineP2;                 // 2. valittu piste 3D-maailmassa
+        ccHObject          *m_linePoint1Highlight;   // highlight-dot P1:lle
+        ccHObject          *m_linePoint2Highlight;   // highlight-dot P2:lle
     };
 
     MaastoDialog *openDialog( ccMainAppInterface *appInterface, ccPointCloud *cloud );
