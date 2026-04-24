@@ -245,7 +245,8 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
 // VolumeBuilder::buildFromLine
 // Rakentaa boksi-meshin (8 kulmapistettä, 6 tahkoa) kahdesta 3D-pisteestä.
 //
-// Akselin (axisDir) suunnassa ekstruusio on ±halfExtent (käytännössä ääretön).
+// Akselin (axisDir) suunnassa ekstruusio rajaantuu pistepilven bounding boxin
+// globaaleihin rajoihin (axisMin … axisMax) — ei kiinteään halfExtent-arvoon.
 // Paksuussuunta on thickDir = (lineDir × axisDir).normalized().
 // Muoto rakentuu KOKONAAN oikealle puolelle viivasta (katsottuna P1→P2):
 //   viiva on muodon vasen reuna, oikea reuna on viiva + thickDir * thickness.
@@ -254,7 +255,8 @@ ccMesh* VolumeBuilder::buildFromLine( const CCVector3& p1,
                                       const CCVector3& p2,
                                       char             axis,
                                       double           thickness,
-                                      double           halfExtent )
+                                      double           axisMin,
+                                      double           axisMax )
 {
     static int s_lineCounter = 0;
 
@@ -286,24 +288,38 @@ ccMesh* VolumeBuilder::buildFromLine( const CCVector3& p1,
         return nullptr;  // viiva yhdensuuntainen akselin kanssa
     thickDir /= thickDirLen;
 
-    const CCVector3d axisOffset  = axisDir  * halfExtent;
     const CCVector3d thickOffset = thickDir * thickness;  // koko paksuus oikealle
+
+    // Lasketaan BB-rajoista akseli-offsetit kullekin päätepisteelle erikseen.
+    // axisDir on yksikkövektori, joten:
+    //   p + axisDir * (axisMax - p.axisCoord)  →  akselin maksimiraja
+    //   p + axisDir * (axisMin - p.axisCoord)  →  akselin minimiraja
+    auto axisCoord = [&]( const CCVector3d& p ) -> double {
+        if ( axis == 'X' || axis == 'x' ) return p.x;
+        if ( axis == 'Y' || axis == 'y' ) return p.y;
+        return p.z;
+    };
+
+    const double p1AxisMaxOff = axisMax - axisCoord( p1d );
+    const double p1AxisMinOff = axisMin - axisCoord( p1d );
+    const double p2AxisMaxOff = axisMax - axisCoord( p2d );
+    const double p2AxisMinOff = axisMin - axisCoord( p2d );
 
     // 8 kulmapistettä boksille
     // Indeksit:  p1-pää: 0-3,  p2-pää: 4-7
-    //   +axis + thickOffset = 0/4  (oikea reuna, +akseli)
-    //   +axis + 0           = 1/5  (viivan reuna, +akseli)
-    //   -axis + thickOffset = 2/6  (oikea reuna, -akseli)
-    //   -axis + 0           = 3/7  (viivan reuna, -akseli)
+    //   axisMax + thickOffset = 0/4  (oikea reuna, akselin max)
+    //   axisMax + 0           = 1/5  (viivan reuna, akselin max)
+    //   axisMin + thickOffset = 2/6  (oikea reuna, akselin min)
+    //   axisMin + 0           = 3/7  (viivan reuna, akselin min)
     const CCVector3d verts[8] = {
-        p1d + axisOffset + thickOffset,  // 0
-        p1d + axisOffset,                // 1  ← viivan reuna
-        p1d - axisOffset + thickOffset,  // 2
-        p1d - axisOffset,                // 3  ← viivan reuna
-        p2d + axisOffset + thickOffset,  // 4
-        p2d + axisOffset,                // 5  ← viivan reuna
-        p2d - axisOffset + thickOffset,  // 6
-        p2d - axisOffset,                // 7  ← viivan reuna
+        p1d + axisDir * p1AxisMaxOff + thickOffset,  // 0
+        p1d + axisDir * p1AxisMaxOff,                // 1  ← viivan reuna
+        p1d + axisDir * p1AxisMinOff + thickOffset,  // 2
+        p1d + axisDir * p1AxisMinOff,                // 3  ← viivan reuna
+        p2d + axisDir * p2AxisMaxOff + thickOffset,  // 4
+        p2d + axisDir * p2AxisMaxOff,                // 5  ← viivan reuna
+        p2d + axisDir * p2AxisMinOff + thickOffset,  // 6
+        p2d + axisDir * p2AxisMinOff,                // 7  ← viivan reuna
     };
 
     ccPointCloud *cloud = new ccPointCloud( "MaastoLineVolume_verts" );

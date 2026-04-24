@@ -2186,8 +2186,15 @@ namespace MaastoPlugin
         m_lineP1 = p1;
         m_lineP2 = p2;
 
-        // Rakenna boksi-mesh (kokonaan oikealle puolelle viivasta)
-        ccMesh *mesh = VolumeBuilder::buildFromLine( p1, p2, axis, thickness, 10000.0 );
+        // Hae bounding box akseli-rajaukseen
+        ccBBox bb = m_cloud->getOwnBB();
+        double axisMin = 0.0, axisMax = 0.0;
+        if ( axis == 'X' || axis == 'x' ) { axisMin = bb.minCorner().x; axisMax = bb.maxCorner().x; }
+        else if ( axis == 'Y' || axis == 'y' ) { axisMin = bb.minCorner().y; axisMax = bb.maxCorner().y; }
+        else { axisMin = bb.minCorner().z; axisMax = bb.maxCorner().z; }
+
+        // Rakenna boksi-mesh (kokonaan oikealle puolelle viivasta, BB:n rajoihin)
+        ccMesh *mesh = VolumeBuilder::buildFromLine( p1, p2, axis, thickness, axisMin, axisMax );
         if ( mesh )
         {
             m_appInterface->addToDB( mesh );
@@ -2361,8 +2368,15 @@ namespace MaastoPlugin
                                static_cast<float>( newP2d.y ),
                                static_cast<float>( newP2d.z ) );
 
-        // Rakenna uusi mesh siirretyillä pisteillä
-        ccMesh *mesh = VolumeBuilder::buildFromLine( newP1, newP2, axis, thickness, 10000.0 );
+        // Hae bounding box akseli-rajaukseen
+        ccBBox bb2 = m_cloud->getOwnBB();
+        double axisMin2 = 0.0, axisMax2 = 0.0;
+        if ( axis == 'X' || axis == 'x' ) { axisMin2 = bb2.minCorner().x; axisMax2 = bb2.maxCorner().x; }
+        else if ( axis == 'Y' || axis == 'y' ) { axisMin2 = bb2.minCorner().y; axisMax2 = bb2.maxCorner().y; }
+        else { axisMin2 = bb2.minCorner().z; axisMax2 = bb2.maxCorner().z; }
+
+        // Rakenna uusi mesh siirretyillä pisteillä, BB:n rajoihin
+        ccMesh *mesh = VolumeBuilder::buildFromLine( newP1, newP2, axis, thickness, axisMin2, axisMax2 );
         if ( mesh )
         {
             m_appInterface->addToDB( mesh );

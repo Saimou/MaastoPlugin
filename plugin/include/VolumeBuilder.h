@@ -40,15 +40,17 @@ public:
         std::vector<unsigned>*                      outIndices = nullptr );
 
     // Rakentaa suorakaiteisen "seinä"-meshin kahdesta 3D-pisteestä ekstruoimalla
-    // globaalin akselin suuntaan ±halfExtent metriä.
-    // axis       : 'X', 'Y' tai 'Z' — ekstruusioakseli
-    // halfExtent : puoli-ulottuvuus akselin suuntaan (default 10 000 m)
+    // globaalin akselin suuntaan pistepilven bounding boxin rajoihin saakka.
+    // axis    : 'X', 'Y' tai 'Z' — ekstruusioakseli
+    // axisMin : bounding boxin minimiarvo valitulla akselilla
+    // axisMax : bounding boxin maksimiarvo valitulla akselilla
     // Palauttaa uuden ccMesh-olion tai nullptr jos epäonnistuu.
     static ccMesh* buildFromLine( const CCVector3& p1,
                                   const CCVector3& p2,
                                   char             axis,
                                   double           thickness,
-                                  double           halfExtent = 10000.0 );
+                                  double           axisMin,
+                                  double           axisMax );
 
     // Etsii pistepilvestä pisteet jotka ovat "viiva+akseli"-kappaleen sisällä.
     // Testi: piste hyväksytään jos sen etäisyys viivasta (akselin suuntainen
