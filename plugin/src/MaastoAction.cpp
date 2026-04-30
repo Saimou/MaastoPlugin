@@ -52,7 +52,7 @@ namespace MaastoPlugin
             return names;
 
         for ( unsigned i = 0; i < cloud->getNumberOfScalarFields(); ++i )
-            names << QString( cloud->getScalarFieldName( i ) );
+            names << QString::fromStdString( cloud->getScalarFieldName( i ) );
 
         names.sort( Qt::CaseInsensitive );
         return names;
