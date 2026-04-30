@@ -177,3 +177,94 @@ jobs:
           name: MaastoPlugin-windows
           path: install-output/
           if-no-files-found: error
+
+  # ─────────────────────────────────────────────
+  # Windows build → QMAASTO_PLUGIN.dll
+  # CloudCompare 2.14 beta (master) + Qt 6.8.3
+  # MSVC uusin (VS 2022, toolset uusin)
+  # Riippuvuudet condalla — sama strategia kuin
+  # CC:n oma CI (conda-win.yml)
+  # ─────────────────────────────────────────────
+  windows-cc214:
+    name: Windows CC 2.14 beta (Qt6 / MSVC uusin)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout MaastoPlugin
+        uses: actions/checkout@v4
+        with:
+          path: MaastoPlugin
+
+      - name: Checkout CloudCompare master (2.14 beta)
+        uses: actions/checkout@v4
+        with:
+          repository: CloudCompare/CloudCompare
+          ref: master
+          submodules: recursive
+          path: CloudCompare
+
+      - name: Install dependencies (conda)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          architecture: x64
+          auto-activate: false
+          activate-environment: CloudCompareDev
+          channels: conda-forge
+          conda-remove-defaults: "true"
+
+      - name: Install Qt 6.8.3, eigen, laszip, zlib via conda
+        shell: bash -l {0}
+        run: |
+          conda install -y \
+            ninja \
+            "qt6-main==6.8.3" \
+            "eigen=3.4.*" \
+            "zlib=1.3.*" \
+            laszip
+
+      - name: Configure MSVC (VS 2022, uusin toolset)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set MSVC as compiler
+        run: |
+          echo "CXX=cl.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "CC=cl.exe"  | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Copy plugin into CloudCompare sources
+        run: Copy-Item -Recurse MaastoPlugin/plugin CloudCompare/plugins/private/qMaastoPlugin
+
+      - name: Configure CMake
+        shell: bash -l {0}
+        run: |
+          export CONDA_LIB_DIR="$CONDA_PREFIX/Library"
+          export EIGEN_ROOT_DIR="$CONDA_LIB_DIR/include/eigen3"
+          cmake \
+            -B CloudCompare/build \
+            -S CloudCompare \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$CONDA_LIB_DIR" \
+            -DEIGEN_ROOT_DIR="$EIGEN_ROOT_DIR" \
+            -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
+            -DPLUGIN_IO_QCORE=ON \
+            -DPLUGIN_IO_QLAS=ON
+
+      - name: Build
+        shell: bash -l {0}
+        run: cmake --build CloudCompare/build --parallel
+
+      - name: Install
+        shell: bash -l {0}
+        run: cmake --install CloudCompare/build --prefix install-output
+
+      - name: Find plugin .dll
+        run: Get-ChildItem -Recurse install-output -Filter "*maasto*"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaastoPlugin-windows-cc214
+          path: install-output/
+          if-no-files-found: error
