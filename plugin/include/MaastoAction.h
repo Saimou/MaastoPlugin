@@ -27,6 +27,8 @@ namespace MaastoPlugin
     QStringList getScalarFieldNames( ccPointCloud *cloud );
     QStringList getScalarFieldValues( ccPointCloud *cloud, const QString &fieldName );
 
+    class SettingsDialog;
+
     class MaastoDialog : public QDialog
     {
         Q_OBJECT
@@ -88,11 +90,26 @@ namespace MaastoPlugin
         void copyLineRight();
         void extendLineToBBox( CCVector3& p1, CCVector3& p2 ) const;
 
+        // Asetusten tallennus / lataus JSON-tiedostoon
+        void onSaveSettings();
+        void onLoadSettings( MaastoPlugin::SettingsDialog *dlg );
+
+        // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
+        // dlg: jos != nullptr, päivitetään myös dialogin widgetit
+        void loadSettingsFromFile( const QString &path,
+                                   MaastoPlugin::SettingsDialog *dlg = nullptr );
+
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
         // Polku ladatulle .ptc-tiedostolle (päivitetään loadPtcFile:ssa)
         QString             m_ptcFilePath;
+
+        // Viimeksi käytetty tallennushakemisto asetuksille
+        QString             m_lastSaveDir;
+
+        // Viimeksi ladattu/tallennettu asetustiedostopolku
+        QString             m_lastSettingsFilePath;
 
         QComboBox          *m_valuesComboBox;
         QTreeWidget        *m_listWidget;
@@ -120,8 +137,12 @@ namespace MaastoPlugin
         int                 m_measurePointSize;
         QColor              m_measurePointColor;
 
+        // 3D-kappaleiden läpinäkyvyys (0=täysin peittävä, 100=täysin läpinäkyvä)
+        int                 m_meshOpacity;
+
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
+        QPushButton        *m_highlightButton;
         QPushButton        *m_clearSelectionButton;
         QPushButton        *m_showOnlyButton;
         QPushButton        *m_fileButton;

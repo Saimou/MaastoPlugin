@@ -9,6 +9,7 @@
 #include "ccHObjectCaster.h"
 #include "ccMesh.h"
 #include "ccPointCloud.h"
+#include "ccBBox.h"
 #include "ccScalarField.h"
 #include "ccColorScale.h"
 #include "ccHObject.h"
@@ -27,6 +28,7 @@
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QDir>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <QCheckBox>
 #include <QIcon>
@@ -36,6 +38,10 @@
 #include <QStringList>
 #include <algorithm>
 #include <cmath>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QFile>
+#include <QMessageBox>
 
 #include "ccGLWindowSignalEmitter.h"
 
@@ -131,8 +137,12 @@ namespace MaastoPlugin
         , m_highlightColor( Qt::yellow )
         , m_measurePointSize( 8 )
         , m_measurePointColor( Qt::red )
+        , m_meshOpacity( 70 )
+        , m_lastSaveDir( "" )
+        , m_lastSettingsFilePath( "" )
         , m_polygonDrawer( new PolygonDrawer( appInterface, this ) )
         , m_polygonButton( nullptr )
+        , m_highlightButton( nullptr )
         , m_clearSelectionButton( nullptr )
         , m_showOnlyButton( nullptr )
         , m_fileButton( nullptr )
@@ -192,12 +202,33 @@ namespace MaastoPlugin
         connect( m_fileButton, &QPushButton::clicked, this, [this]()
         {
             const QString currentPath = m_ptcFilePath;
+
+            // Oletushakemisto: PTC-tiedoston hakemisto jos asetettu, muuten m_lastSaveDir
+            const QString defaultDir = !m_ptcFilePath.isEmpty()
+                ? QFileInfo( m_ptcFilePath ).absolutePath()
+                : ( !m_lastSaveDir.isEmpty() ? m_lastSaveDir : QDir::homePath() );
+
             SettingsDialog dlg( m_highlightPointSize, m_highlightColor, currentPath,
-                                m_measurePointSize, m_measurePointColor, this );
+                                m_measurePointSize, m_measurePointColor,
+                                m_meshOpacity,
+                                m_nearDistSpinBox        ? m_nearDistSpinBox->value()        : 10.0,
+                                m_farDistSpinBox         ? m_farDistSpinBox->value()         : 1000.0,
+                                m_lineThicknessSpinBox   ? m_lineThicknessSpinBox->value()   : 1.0,
+                                m_minPolygonCountSpinBox ? m_minPolygonCountSpinBox->value()  : 1,
+                                m_lineAxisComboBox       ? m_lineAxisComboBox->currentText() : "Z",
+                                defaultDir,
+                                m_lastSettingsFilePath,
+                                this );
 
             // Kun käyttäjä valitsee .ptc-tiedoston asetuksissa → lataa heti
             connect( &dlg, &SettingsDialog::ptcFileLoaded,
                 this, [this]( const QString &path ) { loadPtcFile( path ); } );
+
+            // Tallennus- ja lataussignaalit
+            connect( &dlg, &SettingsDialog::saveRequested,
+                this, &MaastoDialog::onSaveSettings );
+            connect( &dlg, &SettingsDialog::loadRequested,
+                this, [this, &dlg]() { onLoadSettings( &dlg ); } );
 
             if ( dlg.exec() == QDialog::Accepted )
             {
@@ -205,6 +236,7 @@ namespace MaastoPlugin
                 m_highlightColor     = dlg.color();
                 m_measurePointSize   = dlg.measurePointSize();
                 m_measurePointColor  = dlg.measurePointColor();
+                m_meshOpacity        = dlg.meshOpacity();
                 refreshHighlights();
             }
         } );
@@ -396,8 +428,20 @@ namespace MaastoPlugin
         m_showOnlyButton->setEnabled( false );   // disabloitu kunnes on valinta
         polygonCol->addWidget( m_showOnlyButton );
 
-        m_clearSelectionButton = new QPushButton( "Poista valinta", this );
-        polygonCol->addWidget( m_clearSelectionButton );
+        {
+            QHBoxLayout *selRow = new QHBoxLayout();
+            selRow->setContentsMargins( 0, 0, 0, 0 );
+
+            m_highlightButton = new QPushButton( "Korosta valinta", this );
+            m_highlightButton->setCheckable( true );
+            m_highlightButton->setChecked( true );
+            selRow->addWidget( m_highlightButton );
+
+            m_clearSelectionButton = new QPushButton( "Poista valinta", this );
+            selRow->addWidget( m_clearSelectionButton );
+
+            polygonCol->addLayout( selRow );
+        }
 
         buttonRow->addLayout( polygonCol );
 
@@ -616,6 +660,12 @@ namespace MaastoPlugin
                 disableShowOnlyMode();
         } );
 
+        // Korosta valinta: päällä/pois highlight-pilven näyttäminen
+        connect( m_highlightButton, &QPushButton::toggled, this, [this]( bool )
+        {
+            refreshHighlights();
+        } );
+
         // Poista valinta: poistaa kaikki 3D-muodot ja highlight-pisteet
         connect( m_clearSelectionButton, &QPushButton::clicked, this, [this]()
         {
@@ -674,11 +724,16 @@ namespace MaastoPlugin
             ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
             if ( win && !m_polygonDrawer->getClosedVertices().empty() )
             {
+                const ccBBox clipBBox = ( m_cloud != nullptr )
+                                        ? m_cloud->getOwnBB()
+                                        : ccBBox();
                 ccMesh *mesh = VolumeBuilder::build(
                     m_polygonDrawer->getClosedVertices(),
                     win,
+                    clipBBox,
                     m_nearDistSpinBox->value(),
-                    m_farDistSpinBox->value()
+                    m_farDistSpinBox->value(),
+                    m_meshOpacity
                 );
                 if ( mesh )
                 {
@@ -693,6 +748,7 @@ namespace MaastoPlugin
                             m_polygonDrawer->getClosedVertices(),
                             win,
                             m_cloud,
+                            clipBBox,
                             m_nearDistSpinBox->value(),
                             m_farDistSpinBox->value(),
                             &indices
@@ -1546,6 +1602,15 @@ namespace MaastoPlugin
             return;
         }
 
+        // Jos "Korosta valinta" -nappi on poissa päältä, ei luoda highlight-pilveä
+        if ( m_highlightButton && !m_highlightButton->isChecked() )
+        {
+            if ( m_showOnlyButton )
+                m_showOnlyButton->setEnabled( !m_indexHitCount.empty() );
+            m_appInterface->refreshAll();
+            return;
+        }
+
         const QSet<float> selectedValues = getCheckedValues();
         ccPointCloud *highlighted = createFilteredHighlight( selectedValues );
 
@@ -1834,6 +1899,199 @@ namespace MaastoPlugin
     }
 
     // ----------------------------------------------------------------
+    // ----------------------------------------------------------------
+    // onSaveSettings
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::onSaveSettings()
+    {
+        // Oletushakemisto: PTC-tiedoston hakemisto jos asetettu
+        const QString defaultDir = !m_ptcFilePath.isEmpty()
+            ? QFileInfo( m_ptcFilePath ).absolutePath()
+            : ( !m_lastSaveDir.isEmpty() ? m_lastSaveDir : QDir::homePath() );
+
+        const QString path = QFileDialog::getSaveFileName(
+            this,
+            "Tallenna asetukset",
+            defaultDir + "/MaastoPluginAsetukset.json",
+            "JSON (*.json)" );
+
+        if ( path.isEmpty() )
+            return;
+
+        QJsonObject root;
+
+        // Highlight
+        QJsonObject highlight;
+        highlight["pointSize"] = m_highlightPointSize;
+        highlight["color"]     = m_highlightColor.name();
+        root["highlight"] = highlight;
+
+        // Mittauspiste
+        QJsonObject measurePt;
+        measurePt["pointSize"] = m_measurePointSize;
+        measurePt["color"]     = m_measurePointColor.name();
+        root["measurePoint"] = measurePt;
+
+        // 3D-kappaleet
+        root["meshOpacity"] = m_meshOpacity;
+
+        // Polygon-asetukset
+        QJsonObject polygon;
+        polygon["nearDist"] = m_nearDistSpinBox ? m_nearDistSpinBox->value() : 10.0;
+        polygon["farDist"]  = m_farDistSpinBox  ? m_farDistSpinBox->value()  : 1000.0;
+        root["polygon"] = polygon;
+
+        // Viiva-asetukset
+        QJsonObject line;
+        line["thickness"] = m_lineThicknessSpinBox ? m_lineThicknessSpinBox->value() : 1.0;
+        line["axis"]      = m_lineAxisComboBox ? m_lineAxisComboBox->currentText() : "Z";
+        root["line"] = line;
+
+        // PTC-tiedosto
+        root["ptcFilePath"] = m_ptcFilePath;
+
+        QFile file( path );
+        if ( !file.open( QIODevice::WriteOnly ) )
+        {
+            QMessageBox::warning( this, "Virhe",
+                QString( "Tiedoston kirjoittaminen epäonnistui:\n%1" ).arg( path ) );
+            return;
+        }
+        file.write( QJsonDocument( root ).toJson( QJsonDocument::Indented ) );
+        file.close();
+
+        m_lastSaveDir          = QFileInfo( path ).absolutePath();
+        m_lastSettingsFilePath = path;
+    }
+
+    // ----------------------------------------------------------------
+    // onLoadSettings
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::onLoadSettings( SettingsDialog *dlg )
+    {
+        const QString defaultDir = !m_ptcFilePath.isEmpty()
+            ? QFileInfo( m_ptcFilePath ).absolutePath()
+            : ( !m_lastSaveDir.isEmpty() ? m_lastSaveDir : QDir::homePath() );
+
+        const QString path = QFileDialog::getOpenFileName(
+            this,
+            "Lataa asetukset",
+            defaultDir,
+            "JSON (*.json)" );
+
+        if ( path.isEmpty() )
+            return;
+
+        loadSettingsFromFile( path, dlg );
+    }
+
+    // ----------------------------------------------------------------
+    // loadSettingsFromFile
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::loadSettingsFromFile( const QString &path, SettingsDialog *dlg )
+    {
+        QFile file( path );
+        if ( !file.open( QIODevice::ReadOnly ) )
+        {
+            QMessageBox::warning( this, "Virhe",
+                QString( "Tiedoston avaaminen epäonnistui:\n%1" ).arg( path ) );
+            return;
+        }
+        const QJsonDocument doc = QJsonDocument::fromJson( file.readAll() );
+        file.close();
+
+        if ( doc.isNull() || !doc.isObject() )
+        {
+            QMessageBox::warning( this, "Virhe", "Tiedosto ei ole kelvollinen JSON." );
+            return;
+        }
+
+        const QJsonObject root = doc.object();
+
+        // Highlight
+        if ( root.contains( "highlight" ) )
+        {
+            const QJsonObject h = root["highlight"].toObject();
+            if ( h.contains( "pointSize" ) )
+                m_highlightPointSize = h["pointSize"].toInt( m_highlightPointSize );
+            if ( h.contains( "color" ) )
+            {
+                QColor c( h["color"].toString() );
+                if ( c.isValid() ) m_highlightColor = c;
+            }
+        }
+
+        // Mittauspiste
+        if ( root.contains( "measurePoint" ) )
+        {
+            const QJsonObject m = root["measurePoint"].toObject();
+            if ( m.contains( "pointSize" ) )
+                m_measurePointSize = m["pointSize"].toInt( m_measurePointSize );
+            if ( m.contains( "color" ) )
+            {
+                QColor c( m["color"].toString() );
+                if ( c.isValid() ) m_measurePointColor = c;
+            }
+        }
+
+        // 3D-kappaleet
+        if ( root.contains( "meshOpacity" ) )
+            m_meshOpacity = root["meshOpacity"].toInt( m_meshOpacity );
+
+        // Polygon-asetukset
+        if ( root.contains( "polygon" ) )
+        {
+            const QJsonObject p = root["polygon"].toObject();
+            if ( m_nearDistSpinBox && p.contains( "nearDist" ) )
+                m_nearDistSpinBox->setValue( p["nearDist"].toDouble() );
+            if ( m_farDistSpinBox && p.contains( "farDist" ) )
+                m_farDistSpinBox->setValue( p["farDist"].toDouble() );
+            if ( m_minPolygonCountSpinBox && p.contains( "minCount" ) )
+                m_minPolygonCountSpinBox->setValue( p["minCount"].toInt() );
+        }
+
+        // Viiva-asetukset
+        if ( root.contains( "line" ) )
+        {
+            const QJsonObject l = root["line"].toObject();
+            if ( m_lineThicknessSpinBox && l.contains( "thickness" ) )
+                m_lineThicknessSpinBox->setValue( l["thickness"].toDouble() );
+            if ( m_lineAxisComboBox && l.contains( "axis" ) )
+            {
+                const int idx = m_lineAxisComboBox->findText( l["axis"].toString() );
+                if ( idx >= 0 ) m_lineAxisComboBox->setCurrentIndex( idx );
+            }
+        }
+
+        // PTC-tiedosto — lataa jos muuttui
+        if ( root.contains( "ptcFilePath" ) )
+        {
+            const QString newPtc = root["ptcFilePath"].toString();
+            if ( !newPtc.isEmpty() && newPtc != m_ptcFilePath )
+                loadPtcFile( newPtc );
+        }
+
+        m_lastSaveDir          = QFileInfo( path ).absolutePath();
+        m_lastSettingsFilePath = path;
+
+        // Päivitä SettingsDialog:n widgetit ladatuilla arvoilla
+        // (muuten OK-painallus ylikirjoittaisi juuri ladatut arvot vanhoilla)
+        if ( dlg )
+        {
+            dlg->applyLoadedSettings( m_highlightPointSize, m_highlightColor,
+                                      m_measurePointSize,   m_measurePointColor,
+                                      m_meshOpacity );
+            dlg->setLoadedSettingsPath( path );
+        }
+
+        // Päivitä highlight nykyisillä asetuksilla
+        refreshHighlights();
+    }
+
+    // ----------------------------------------------------------------
     // loadPtcFile
     // ----------------------------------------------------------------
 
@@ -1893,6 +2151,11 @@ namespace MaastoPlugin
 
         const QString ptcPath = dir.absoluteFilePath( ptcFiles.first() );
         loadPtcFile( ptcPath );
+
+        // Lataa automaattisesti MaastoPluginAsetukset.json jos se löytyy samasta kansiosta
+        const QString autoSettingsPath = dir.absoluteFilePath( "MaastoPluginAsetukset.json" );
+        if ( QFile::exists( autoSettingsPath ) )
+            loadSettingsFromFile( autoSettingsPath );
     }
 
     // ----------------------------------------------------------------
@@ -2194,7 +2457,7 @@ namespace MaastoPlugin
         else { axisMin = bb.minCorner().z; axisMax = bb.maxCorner().z; }
 
         // Rakenna boksi-mesh (kokonaan oikealle puolelle viivasta, BB:n rajoihin)
-        ccMesh *mesh = VolumeBuilder::buildFromLine( p1, p2, axis, thickness, axisMin, axisMax );
+        ccMesh *mesh = VolumeBuilder::buildFromLine( p1, p2, axis, thickness, axisMin, axisMax, m_meshOpacity );
         if ( mesh )
         {
             m_appInterface->addToDB( mesh );
@@ -2376,7 +2639,7 @@ namespace MaastoPlugin
         else { axisMin2 = bb2.minCorner().z; axisMax2 = bb2.maxCorner().z; }
 
         // Rakenna uusi mesh siirretyillä pisteillä, BB:n rajoihin
-        ccMesh *mesh = VolumeBuilder::buildFromLine( newP1, newP2, axis, thickness, axisMin2, axisMax2 );
+        ccMesh *mesh = VolumeBuilder::buildFromLine( newP1, newP2, axis, thickness, axisMin2, axisMax2, m_meshOpacity );
         if ( mesh )
         {
             m_appInterface->addToDB( mesh );

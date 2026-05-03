@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "CCGeom.h"
+#include "ccBBox.h"
 
 class ccMesh;
 class ccPointCloud;
@@ -15,19 +16,23 @@ class ccGLWindowInterface;
 class VolumeBuilder
 {
 public:
-    // Rakentaa prisma-meshin.
+    // Rakentaa prisma-meshin joka on leikattu pistepilven bounding boxiin.
     // polygon2D : suljetun polygonin 2D-kulmapisteet (PolygonDrawer::Point2D)
     // glWindow  : aktiivinen GL-ikkuna — käytetään kameran projektioon
+    // clipBBox  : pistepilven bounding box — prisma leikataan tähän
     // nearDist  : etukannen etäisyys kamerasta metreinä (default 10)
     // farDist   : takakannen etäisyys kamerasta metreinä (default 1000)
     // Palauttaa uuden ccMesh-olion tai nullptr jos epäonnistuu.
     static ccMesh* build( const std::vector<PolygonDrawer::Point2D>& polygon2D,
                           ccGLWindowInterface*                        glWindow,
+                          const ccBBox&                               clipBBox,
                           double                                      nearDist = 10.0,
-                          double                                      farDist  = 1000.0 );
+                          double                                      farDist  = 1000.0,
+                          int                                         opacity  = 70 );
 
     // Etsii pistepilvestä pisteet jotka ovat prisman sisällä ja luo niistä
     // erillisen korostetun pistepilven (keltainen väri, pistekoko +2).
+    // clipBBox  : pistepilven bounding box — pisteet suodatetaan myös BB:n mukaan
     // outIndices: jos != nullptr, täytetään sisällä olevien pisteiden
     //             alkuperäisillä indekseillä pistepilvessä (luokittelua varten)
     // Palauttaa uuden pilven tai nullptr jos yksikään piste ei ole sisällä.
@@ -35,6 +40,7 @@ public:
         const std::vector<PolygonDrawer::Point2D>& polygon2D,
         ccGLWindowInterface*                        glWindow,
         ccPointCloud*                               cloud,
+        const ccBBox&                               clipBBox,
         double                                      nearDist,
         double                                      farDist,
         std::vector<unsigned>*                      outIndices = nullptr );
@@ -50,7 +56,8 @@ public:
                                   char             axis,
                                   double           thickness,
                                   double           axisMin,
-                                  double           axisMax );
+                                  double           axisMax,
+                                  int              opacity = 70 );
 
     // Etsii pistepilvestä pisteet jotka ovat "viiva+akseli"-kappaleen sisällä.
     // Testi: piste hyväksytään jos sen etäisyys viivasta (akselin suuntainen

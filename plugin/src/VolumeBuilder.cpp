@@ -6,9 +6,11 @@
 #include "ccGLWindowInterface.h"
 #include "ccViewportParameters.h"
 #include "ManualSegmentationTools.h"
+#include "ccBBox.h"
 
 #include <QString>
 #include <cmath>
+#include <algorithm>
 
 // ----------------------------------------------------------------
 // Projisoi yksi 2D centered GL -piste 3D-maailmaan etäisyydellä
@@ -57,17 +59,123 @@ static bool unprojectToWorld( float                px,
 }
 
 // ----------------------------------------------------------------
+// Sutherland-Hodgman -leikkaus yhdelle half-space-tasolla.
+// Taso: pisteet joilla (p · normal) <= offset ovat sisällä.
+// ----------------------------------------------------------------
+static std::vector<CCVector3d> clipPolygonByPlane(
+    const std::vector<CCVector3d>& poly,
+    const CCVector3d&              normal,
+    double                         offset )
+{
+    std::vector<CCVector3d> result;
+    const unsigned n = static_cast<unsigned>( poly.size() );
+    if ( n == 0 )
+        return result;
+
+    for ( unsigned i = 0; i < n; ++i )
+    {
+        const CCVector3d& A = poly[i];
+        const CCVector3d& B = poly[( i + 1 ) % n];
+        const double dA = A.dot( normal ) - offset;
+        const double dB = B.dot( normal ) - offset;
+        const bool insideA = dA <= 0.0;
+        const bool insideB = dB <= 0.0;
+
+        if ( insideA )
+            result.push_back( A );
+
+        // Leikkaus: A sisällä→B ulkona tai A ulkona→B sisällä
+        if ( insideA != insideB )
+        {
+            const double t = dA / ( dA - dB );
+            result.push_back( A + ( B - A ) * t );
+        }
+    }
+    return result;
+}
+
+// ----------------------------------------------------------------
+// Leikkaa polygoni (CCVector3d-lista) AABB:lla kuudella tasolla.
+// ----------------------------------------------------------------
+static std::vector<CCVector3d> clipPolygonByAABB(
+    const std::vector<CCVector3d>& poly,
+    const ccBBox&                  bb )
+{
+    const CCVector3d bbMin( static_cast<double>( bb.minCorner().x ),
+                            static_cast<double>( bb.minCorner().y ),
+                            static_cast<double>( bb.minCorner().z ) );
+    const CCVector3d bbMax( static_cast<double>( bb.maxCorner().x ),
+                            static_cast<double>( bb.maxCorner().y ),
+                            static_cast<double>( bb.maxCorner().z ) );
+
+    std::vector<CCVector3d> p = poly;
+
+    // +X: p.x <= bbMax.x  →  normal=(1,0,0), offset=bbMax.x
+    p = clipPolygonByPlane( p, CCVector3d( 1, 0, 0 ),  bbMax.x );
+    if ( p.empty() ) return p;
+    // -X: p.x >= bbMin.x  →  normal=(-1,0,0), offset=-bbMin.x
+    p = clipPolygonByPlane( p, CCVector3d( -1, 0, 0 ), -bbMin.x );
+    if ( p.empty() ) return p;
+    // +Y
+    p = clipPolygonByPlane( p, CCVector3d( 0, 1, 0 ),  bbMax.y );
+    if ( p.empty() ) return p;
+    // -Y
+    p = clipPolygonByPlane( p, CCVector3d( 0, -1, 0 ), -bbMin.y );
+    if ( p.empty() ) return p;
+    // +Z
+    p = clipPolygonByPlane( p, CCVector3d( 0, 0, 1 ),  bbMax.z );
+    if ( p.empty() ) return p;
+    // -Z
+    p = clipPolygonByPlane( p, CCVector3d( 0, 0, -1 ), -bbMin.z );
+    return p;
+}
+
+// ----------------------------------------------------------------
+// Lisää leikatun polygonin pisteet cloud:iin ja trianguloi fan-tyylillä.
+// Palauttaa lisättyjen kolmioiden lukumäärän.
+// ----------------------------------------------------------------
+static unsigned addClippedPolygon( ccPointCloud*               cloud,
+                                   ccMesh*                     mesh,
+                                   const std::vector<CCVector3d>& poly,
+                                   bool                        reverseWinding )
+{
+    const unsigned M = static_cast<unsigned>( poly.size() );
+    if ( M < 3 )
+        return 0;
+
+    const unsigned base = cloud->size();
+    for ( unsigned i = 0; i < M; ++i )
+        cloud->addPoint( CCVector3::fromArray( poly[i].u ) );
+
+    unsigned triCount = 0;
+    for ( unsigned i = 1; i + 1 < M; ++i )
+    {
+        if ( !reverseWinding )
+            mesh->addTriangle( base, base + i, base + i + 1 );
+        else
+            mesh->addTriangle( base, base + i + 1, base + i );
+        ++triCount;
+    }
+    return triCount;
+}
+
+// ----------------------------------------------------------------
 // VolumeBuilder::build
 // ----------------------------------------------------------------
 ccMesh* VolumeBuilder::build( const std::vector<PolygonDrawer::Point2D>& polygon2D,
                               ccGLWindowInterface*                        glWindow,
+                              const ccBBox&                               clipBBox,
                               double                                      nearDist,
-                              double                                      farDist )
+                              double                                      farDist,
+                              int                                         opacity )
 {
     static int s_counter = 0;
 
     const unsigned N = static_cast<unsigned>( polygon2D.size() );
     if ( N < 3 || !glWindow )
+        return nullptr;
+
+    if ( !clipBBox.isValid() )
         return nullptr;
 
     // ---- Projisoi kulmat 3D-maailmaan ----
@@ -80,60 +188,82 @@ ccMesh* VolumeBuilder::build( const std::vector<PolygonDrawer::Point2D>& polygon
         const float py = polygon2D[i][1];
         if ( !unprojectToWorld( px, py, glWindow, nearDist, nearPts[i] ) )
             return nullptr;
-        if ( !unprojectToWorld( px, py, glWindow, farDist,  farPts[i]  ) )
+        if ( !unprojectToWorld( px, py, glWindow, farDist, farPts[i] ) )
             return nullptr;
     }
 
-    // ---- Luo pistepilvi (2N pistettä) ----
+    // ---- Luo prisman kaikki polygonit ja leikkaa ne BB:llä ----
+    // Etukansi (near): pisteet 0..N-1 järjestyksessä
+    // Takakansi (far): pisteet N..2N-1 käänteisessä järjestyksessä
+    // Sivuseinät: N kpl nelikulmaisia polygoneja (4 pistettä kukin)
+
+    std::vector<CCVector3d> nearCapRaw( nearPts.begin(), nearPts.end() );
+    std::vector<CCVector3d> farCapRaw( farPts.begin(), farPts.end() );
+
+    std::vector<CCVector3d> nearCap = clipPolygonByAABB( nearCapRaw, clipBBox );
+    std::vector<CCVector3d> farCap  = clipPolygonByAABB( farCapRaw,  clipBBox );
+
+    // Sivuseinät: jokainen sivu on nelikulmio (nearPts[i], nearPts[j], farPts[j], farPts[i])
+    struct SideWall { std::vector<CCVector3d> poly; };
+    std::vector<SideWall> walls;
+    walls.reserve( N );
+    for ( unsigned i = 0; i < N; ++i )
+    {
+        const unsigned j = ( i + 1 ) % N;
+        std::vector<CCVector3d> quad = {
+            nearPts[i], nearPts[j], farPts[j], farPts[i]
+        };
+        SideWall w;
+        w.poly = clipPolygonByAABB( quad, clipBBox );
+        walls.push_back( std::move( w ) );
+    }
+
+    // ---- Laske kokonaisverteksimäärä ----
+    unsigned totalVerts = static_cast<unsigned>( nearCap.size() + farCap.size() );
+    for ( const auto& w : walls )
+        totalVerts += static_cast<unsigned>( w.poly.size() );
+
+    if ( totalVerts == 0 )
+        return nullptr;  // kaikki leikattu pois
+
+    // ---- Luo pistepilvi ja mesh ----
     ccPointCloud* cloud = new ccPointCloud( "MaastoVolume_verts" );
-    if ( !cloud->reserve( 2 * N ) )
+    if ( !cloud->reserve( totalVerts ) )
     {
         delete cloud;
         return nullptr;
     }
 
-    for ( unsigned i = 0; i < N; ++i )
-        cloud->addPoint( CCVector3::fromArray( nearPts[i].u ) );
-    for ( unsigned i = 0; i < N; ++i )
-        cloud->addPoint( CCVector3::fromArray( farPts[i].u ) );
-
-    // ---- Vertex-värit alpha-läpinäkyvyydellä ----
-    // alpha 100/255 ≈ 40% läpinäkyvä harmaa
-    if ( cloud->reserveTheRGBTable() )
-    {
-        const ColorCompType r = 200, g = 200, b = 200, a = 100;
-        for ( unsigned i = 0; i < 2 * N; ++i )
-            cloud->addColor( r, g, b, a );
-        cloud->showColors( true );
-    }
-
-    // ---- Luo mesh ----
-    // Trianglit: etukansi (N-2) + takakansi (N-2) + seinät (N*2)
-    const unsigned triCount = ( N - 2 ) * 2 + N * 2;
-
+    // Yliarvioidaan kolmiomäärä (leikatuissa kansissa voi olla enemmän kulmia)
+    const unsigned maxTris = totalVerts * 2 + N * 4;
     ccMesh* mesh = new ccMesh( cloud );
     mesh->addChild( cloud );
-
-    if ( !mesh->reserve( triCount ) )
+    if ( !mesh->reserve( maxTris ) )
     {
         delete mesh;
         return nullptr;
     }
 
-    // Etukansi — fan triangulation (pisteet 0..N-1)
-    for ( unsigned i = 1; i + 1 < N; ++i )
-        mesh->addTriangle( 0, i, i + 1 );
+    // ---- Lisää leikatut polygonit meshiin ----
+    // Etukansi
+    addClippedPolygon( cloud, mesh, nearCap, false );
 
-    // Takakansi — käänteinen järjestys (pisteet N..2N-1)
-    for ( unsigned i = 1; i + 1 < N; ++i )
-        mesh->addTriangle( N, N + i + 1, N + i );
+    // Takakansi (käänteinen winding)
+    addClippedPolygon( cloud, mesh, farCap, true );
 
-    // Seinät — kaksi kolmiota per kulmaväli
-    for ( unsigned i = 0; i < N; ++i )
+    // Sivuseinät
+    for ( const auto& w : walls )
+        addClippedPolygon( cloud, mesh, w.poly, false );
+
+    // ---- Vertex-värit ----
+    if ( cloud->reserveTheRGBTable() )
     {
-        const unsigned j = ( i + 1 ) % N;
-        mesh->addTriangle( i,     j,     N + i );
-        mesh->addTriangle( j,     N + j, N + i );
+        const int clampedOpacity = std::max( 0, std::min( 100, opacity ) );
+        const ColorCompType r = 200, g = 200, b = 200;
+        const ColorCompType a = static_cast<ColorCompType>( ( 100 - clampedOpacity ) * 255 / 100 );
+        for ( unsigned i = 0; i < cloud->size(); ++i )
+            cloud->addColor( r, g, b, a );
+        cloud->showColors( true );
     }
 
     // ---- Normaaleille ----
@@ -154,6 +284,7 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
     const std::vector<PolygonDrawer::Point2D>& polygon2D,
     ccGLWindowInterface*                        glWindow,
     ccPointCloud*                               cloud,
+    const ccBBox&                               clipBBox,
     double                                      nearDist,
     double                                      farDist,
     std::vector<unsigned>*                      outIndices )
@@ -194,6 +325,19 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
         ) );
     }
 
+    // ---- BB min/max double-muodossa ----
+    const bool useBBox = clipBBox.isValid();
+    CCVector3d bbMin, bbMax;
+    if ( useBBox )
+    {
+        bbMin = CCVector3d( static_cast<double>( clipBBox.minCorner().x ),
+                            static_cast<double>( clipBBox.minCorner().y ),
+                            static_cast<double>( clipBBox.minCorner().z ) );
+        bbMax = CCVector3d( static_cast<double>( clipBBox.maxCorner().x ),
+                            static_cast<double>( clipBBox.maxCorner().y ),
+                            static_cast<double>( clipBBox.maxCorner().z ) );
+    }
+
     // ---- Käy pistepilvi läpi ja kerää sisällä olevat ----
     std::vector<unsigned> insideIndices;
 
@@ -203,6 +347,15 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
         CCVector3d Pd( static_cast<double>( P->x ),
                        static_cast<double>( P->y ),
                        static_cast<double>( P->z ) );
+
+        // Bounding box -testi
+        if ( useBBox )
+        {
+            if ( Pd.x < bbMin.x || Pd.x > bbMax.x ||
+                 Pd.y < bbMin.y || Pd.y > bbMax.y ||
+                 Pd.z < bbMin.z || Pd.z > bbMax.z )
+                continue;
+        }
 
         // Syvyystesti: pisteen syvyys kameran katselusuunnassa
         const double depth = ( Pd - eyePos ).dot( forward );
@@ -256,7 +409,8 @@ ccMesh* VolumeBuilder::buildFromLine( const CCVector3& p1,
                                       char             axis,
                                       double           thickness,
                                       double           axisMin,
-                                      double           axisMax )
+                                      double           axisMax,
+                                      int              opacity )
 {
     static int s_lineCounter = 0;
 
@@ -333,7 +487,9 @@ ccMesh* VolumeBuilder::buildFromLine( const CCVector3& p1,
 
     if ( cloud->reserveTheRGBTable() )
     {
-        const ColorCompType r = 200, g = 200, b = 200, a = 100;
+        const int clampedOpacity = std::max( 0, std::min( 100, opacity ) );
+        const ColorCompType r = 200, g = 200, b = 200;
+        const ColorCompType a = static_cast<ColorCompType>( ( 100 - clampedOpacity ) * 255 / 100 );
         for ( unsigned i = 0; i < 8; ++i )
             cloud->addColor( r, g, b, a );
         cloud->showColors( true );

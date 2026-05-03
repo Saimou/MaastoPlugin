@@ -20,6 +20,14 @@ namespace MaastoPlugin
                                     const QString &currentPtcPath,
                                     int            measurePointSize,
                                     const QColor  &measurePointColor,
+                                    int            meshOpacity,
+                                    double         nearDist,
+                                    double         farDist,
+                                    double         lineThickness,
+                                    int            minPolyCount,
+                                    const QString &lineAxis,
+                                    const QString &defaultSaveDir,
+                                    const QString &currentSettingsPath,
                                     QWidget       *parent )
         : QDialog( parent )
         , m_pointSizeSpinBox( nullptr )
@@ -29,7 +37,17 @@ namespace MaastoPlugin
         , m_measurePointSizeSpinBox( nullptr )
         , m_measurePointColorButton( nullptr )
         , m_measurePointColor( measurePointColor )
+        , m_meshOpacitySpinBox( nullptr )
+        , m_settingsFileLabel( nullptr )
     {
+        // Hiljenna käyttämättömät parametrit (tallennus/lataus hoidetaan MaastoAction:ssa)
+        Q_UNUSED( nearDist )
+        Q_UNUSED( farDist )
+        Q_UNUSED( lineThickness )
+        Q_UNUSED( minPolyCount )
+        Q_UNUSED( lineAxis )
+        Q_UNUSED( defaultSaveDir )
+
         setWindowTitle( "Asetukset" );
         setMinimumWidth( 320 );
 
@@ -133,6 +151,64 @@ namespace MaastoPlugin
             layout->addLayout( form2 );
         }
 
+        // ── Erotin ───────────────────────────────────────────────
+        {
+            QFrame *sep3 = new QFrame( this );
+            sep3->setFrameShape( QFrame::HLine );
+            sep3->setFrameShadow( QFrame::Sunken );
+            layout->addWidget( sep3 );
+        }
+
+        // ── 3D-kappaleet ──────────────────────────────────────────
+        {
+            QFormLayout *form3 = new QFormLayout();
+            form3->setContentsMargins( 0, 4, 0, 8 );
+
+            m_meshOpacitySpinBox = new QSpinBox( this );
+            m_meshOpacitySpinBox->setRange( 0, 100 );
+            m_meshOpacitySpinBox->setValue( meshOpacity );
+            m_meshOpacitySpinBox->setSuffix( " %" );
+            form3->addRow( "3D-kappaleiden läpinäkyvyys:", m_meshOpacitySpinBox );
+
+            layout->addLayout( form3 );
+        }
+
+        // ── Erotin ───────────────────────────────────────────────
+        {
+            QFrame *sep4 = new QFrame( this );
+            sep4->setFrameShape( QFrame::HLine );
+            sep4->setFrameShadow( QFrame::Sunken );
+            layout->addWidget( sep4 );
+        }
+
+        // ── Asetustiedosto ────────────────────────────────────────
+        {
+            QHBoxLayout *fileRow = new QHBoxLayout();
+            fileRow->setContentsMargins( 0, 4, 0, 8 );
+
+            QPushButton *saveButton = new QPushButton( "Tallenna asetukset", this );
+            QPushButton *loadButton = new QPushButton( "Lataa asetukset", this );
+
+            connect( saveButton, &QPushButton::clicked, this, [this]()
+            {
+                emit saveRequested();
+            } );
+            connect( loadButton, &QPushButton::clicked, this, [this]()
+            {
+                emit loadRequested();
+            } );
+
+            fileRow->addWidget( saveButton );
+            fileRow->addWidget( loadButton );
+            layout->addLayout( fileRow );
+
+            m_settingsFileLabel = new QLabel( currentSettingsPath, this );
+            m_settingsFileLabel->setVisible( !currentSettingsPath.isEmpty() );
+            m_settingsFileLabel->setWordWrap( true );
+            m_settingsFileLabel->setStyleSheet( "color: gray; font-size: 9pt;" );
+            layout->addWidget( m_settingsFileLabel );
+        }
+
         // ── OK / Cancel ───────────────────────────────────────────
         QDialogButtonBox *buttons = new QDialogButtonBox(
             QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this );
@@ -159,6 +235,48 @@ namespace MaastoPlugin
     QColor SettingsDialog::measurePointColor() const
     {
         return m_measurePointColor;
+    }
+
+    int SettingsDialog::meshOpacity() const
+    {
+        return m_meshOpacitySpinBox->value();
+    }
+
+    void SettingsDialog::applyLoadedSettings( int           pointSize,
+                                              const QColor &color,
+                                              int           measurePointSize,
+                                              const QColor &measureColor,
+                                              int           meshOpacity )
+    {
+        if ( m_pointSizeSpinBox )
+            m_pointSizeSpinBox->setValue( pointSize );
+
+        if ( color.isValid() )
+        {
+            m_color = color;
+            updateColorButton();
+        }
+
+        if ( m_measurePointSizeSpinBox )
+            m_measurePointSizeSpinBox->setValue( measurePointSize );
+
+        if ( measureColor.isValid() )
+        {
+            m_measurePointColor = measureColor;
+            updateMeasureColorButton();
+        }
+
+        if ( m_meshOpacitySpinBox )
+            m_meshOpacitySpinBox->setValue( meshOpacity );
+    }
+
+    void SettingsDialog::setLoadedSettingsPath( const QString &path )
+    {
+        if ( m_settingsFileLabel )
+        {
+            m_settingsFileLabel->setText( path );
+            m_settingsFileLabel->setVisible( !path.isEmpty() );
+        }
     }
 
     void SettingsDialog::updateColorButton()
