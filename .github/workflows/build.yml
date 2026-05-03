@@ -180,12 +180,12 @@ jobs:
 
   # ─────────────────────────────────────────────
   # Windows build → QMAASTO_PLUGIN.dll
-  # CloudCompare 2.14 beta (master) + Qt 6.8.3
-  # MSVC 1944 (VS 2022 17.14, toolset 14.44)
-  # Qt asennetaan Qt:n omalta serveriltä
-  # (jurplel/install-qt-action) jotta Qt-DLL:t
-  # täsmäävät virallisen CC-installerin kanssa.
-  # Muut riippuvuudet condalla.
+  # CloudCompare 2.14 beta + Qt 6.8.3 + MSVC 1944
+  # CC-commit kiinnitetty Apr 19 2026 (= virallinen
+  # archivi-paketin release-päivä).
+  # Virallisen CC-archivi-paketin DLL:t korvaavat
+  # CI-buildin DLL:t artefaktissa → plugin toimii
+  # suoraan virallisen CC-asennuksen kanssa.
   # ─────────────────────────────────────────────
   windows-cc214:
     name: Windows CC 2.14 beta (Qt6 / MSVC 1944)
@@ -197,11 +197,11 @@ jobs:
         with:
           path: MaastoPlugin
 
-      - name: Checkout CloudCompare (commit Apr 12 2026 = virallinen 2.14 beta installer)
+      - name: Checkout CloudCompare (commit Apr 19 2026 = virallinen archivi)
         uses: actions/checkout@v4
         with:
           repository: CloudCompare/CloudCompare
-          ref: '78364202322880ca3224573781550b8436ab05bc'
+          ref: '5cba96f477d139fd3f917dd5b84eab99d0606938'
           submodules: recursive
           path: CloudCompare
 
@@ -266,27 +266,24 @@ jobs:
         shell: bash -l {0}
         run: cmake --install CloudCompare/build --prefix install-output
 
+      - name: Lataa virallinen CC 2.14 beta archivi ja korvaa DLL:t
+        shell: cmd
+        run: |
+          curl -L "https://www.cloudcompare.org/release/CloudCompare_v2.14.beta_bin_x64.7z" -o cc_official.7z
+          7z x cc_official.7z -o cc_official -y
+          copy /Y cc_official\CloudCompare\QCC_GL_LIB.dll    install-output\CloudCompare\QCC_GL_LIB.dll
+          copy /Y cc_official\CloudCompare\QCC_DB_LIB.dll    install-output\CloudCompare\QCC_DB_LIB.dll
+          copy /Y cc_official\CloudCompare\CCCoreLib.dll     install-output\CloudCompare\CCCoreLib.dll
+          copy /Y cc_official\CloudCompare\CCPluginAPI.dll   install-output\CloudCompare\CCPluginAPI.dll
+          copy /Y cc_official\CloudCompare\CCFbo.dll         install-output\CloudCompare\CCFbo.dll
+          echo DLL:t korvattu virallisista
+
       - name: Find plugin .dll
         run: Get-ChildItem -Recurse install-output -Filter "*maasto*"
 
-      - name: Diagnostiikka — QMAASTO importit CC-kirjastoista
-        shell: cmd
-        run: |
-          echo === QMAASTO_PLUGIN.dll importoidut funktiot QCC_DB_LIB ja QCC_GL_LIB ===
-          dumpbin /imports install-output\CloudCompare\plugins\QMAASTO_PLUGIN.dll | findstr /i "QCC_DB\|QCC_GL\|CCPlugin\|CCCoreLib"
-          echo.
-          echo === QCC_DB_LIB.dll exportatut funktiot (kaikki) ===
-          dumpbin /exports install-output\CloudCompare\QCC_DB_LIB.dll
-          echo.
-          echo === QCC_GL_LIB.dll exportatut funktiot (kaikki) ===
-          dumpbin /exports install-output\CloudCompare\QCC_GL_LIB.dll
-          echo.
-          echo === CCPluginAPI.dll exportatut funktiot (kaikki) ===
-          dumpbin /exports install-output\CloudCompare\CCPluginAPI.dll
-
-      - name: Upload artifact — koko CloudCompare build (diagnostiikka)
+      - name: Upload artifact — QMAASTO_PLUGIN.dll
         uses: actions/upload-artifact@v4
         with:
-          name: MaastoPlugin-windows-cc214-full
-          path: install-output/CloudCompare/
+          name: MaastoPlugin-windows-cc214
+          path: install-output/CloudCompare/plugins/QMAASTO_PLUGIN.dll
           if-no-files-found: error
