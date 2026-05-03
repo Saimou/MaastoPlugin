@@ -266,24 +266,14 @@ jobs:
         shell: bash -l {0}
         run: cmake --install CloudCompare/build --prefix install-output
 
-      - name: Lataa virallinen CC 2.14 beta archivi ja korvaa DLL:t
-        shell: cmd
-        run: |
-          curl -L "https://www.cloudcompare.org/release/CloudCompare_v2.14.beta_bin_x64.7z" -o cc_official.7z
-          7z x cc_official.7z -o cc_official -y
-          copy /Y cc_official\CloudCompare\QCC_GL_LIB.dll    install-output\CloudCompare\QCC_GL_LIB.dll
-          copy /Y cc_official\CloudCompare\QCC_DB_LIB.dll    install-output\CloudCompare\QCC_DB_LIB.dll
-          copy /Y cc_official\CloudCompare\CCCoreLib.dll     install-output\CloudCompare\CCCoreLib.dll
-          copy /Y cc_official\CloudCompare\CCPluginAPI.dll   install-output\CloudCompare\CCPluginAPI.dll
-          copy /Y cc_official\CloudCompare\CCFbo.dll         install-output\CloudCompare\CCFbo.dll
-          echo DLL:t korvattu virallisista
-
       - name: Find plugin .dll
         run: Get-ChildItem -Recurse install-output -Filter "*maasto*"
 
-      - name: Upload artifact — QMAASTO_PLUGIN.dll
+      - name: Upload artifact — QMAASTO_PLUGIN.dll + QCC_GL_LIB.dll
         uses: actions/upload-artifact@v4
         with:
           name: MaastoPlugin-windows-cc214
-          path: install-output/CloudCompare/plugins/QMAASTO_PLUGIN.dll
+          path: |
+            install-output/CloudCompare/plugins/QMAASTO_PLUGIN.dll
+            install-output/CloudCompare/QCC_GL_LIB.dll
           if-no-files-found: error
