@@ -197,11 +197,11 @@ jobs:
         with:
           path: MaastoPlugin
 
-      - name: Checkout CloudCompare master (2.14 beta)
+      - name: Checkout CloudCompare (commit Apr 12 2026 = virallinen 2.14 beta installer)
         uses: actions/checkout@v4
         with:
           repository: CloudCompare/CloudCompare
-          ref: master
+          ref: '78364202322880ca3224573781550b8436ab05bc'
           submodules: recursive
           path: CloudCompare
 
@@ -256,8 +256,7 @@ jobs:
             -DCMAKE_PREFIX_PATH="$Qt6_DIR;$CONDA_LIB_DIR" \
             -DEIGEN_ROOT_DIR="$EIGEN_ROOT_DIR" \
             -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
-            -DPLUGIN_IO_QCORE=ON \
-            -DPLUGIN_IO_QLAS=ON
+            -DPLUGIN_IO_QCORE=ON
 
       - name: Build
         shell: bash -l {0}
@@ -269,6 +268,10 @@ jobs:
 
       - name: Find plugin .dll
         run: Get-ChildItem -Recurse install-output -Filter "*maasto*"
+
+      - name: Tarkista QMAASTO_PLUGIN.dll DLL-riippuvuudet (dumpbin)
+        shell: cmd
+        run: dumpbin /dependents install-output\CloudCompare\plugins\QMAASTO_PLUGIN.dll
 
       - name: Upload artifact — vain QMAASTO_PLUGIN.dll
         uses: actions/upload-artifact@v4
