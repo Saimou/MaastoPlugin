@@ -269,9 +269,20 @@ jobs:
       - name: Find plugin .dll
         run: Get-ChildItem -Recurse install-output -Filter "*maasto*"
 
-      - name: Tarkista QMAASTO_PLUGIN.dll DLL-riippuvuudet (dumpbin)
+      - name: Diagnostiikka — QMAASTO importit CC-kirjastoista
         shell: cmd
-        run: dumpbin /dependents install-output\CloudCompare\plugins\QMAASTO_PLUGIN.dll
+        run: |
+          echo === QMAASTO_PLUGIN.dll importoidut funktiot QCC_DB_LIB ja QCC_GL_LIB ===
+          dumpbin /imports install-output\CloudCompare\plugins\QMAASTO_PLUGIN.dll | findstr /i "QCC_DB\|QCC_GL\|CCPlugin\|CCCoreLib"
+          echo.
+          echo === QCC_DB_LIB.dll exportatut funktiot (kaikki) ===
+          dumpbin /exports install-output\CloudCompare\QCC_DB_LIB.dll
+          echo.
+          echo === QCC_GL_LIB.dll exportatut funktiot (kaikki) ===
+          dumpbin /exports install-output\CloudCompare\QCC_GL_LIB.dll
+          echo.
+          echo === CCPluginAPI.dll exportatut funktiot (kaikki) ===
+          dumpbin /exports install-output\CloudCompare\CCPluginAPI.dll
 
       - name: Upload artifact — vain QMAASTO_PLUGIN.dll
         uses: actions/upload-artifact@v4
