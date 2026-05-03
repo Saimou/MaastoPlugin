@@ -222,10 +222,15 @@ jobs:
             "zlib=1.3.*" \
             laszip
 
-      - name: Configure MSVC (VS 2022, uusin toolset)
+      - name: Configure MSVC (VS 2022 17.14, toolset 14.44 / MSVC 1944)
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
+          toolset: 14.44
+
+      - name: Tarkista MSVC-versio
+        shell: bash
+        run: cl.exe 2>&1 | head -1
 
       - name: Set MSVC as compiler
         run: |
