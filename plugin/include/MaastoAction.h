@@ -101,6 +101,11 @@ namespace MaastoPlugin
         // Avaa ClassEditorDialog luokkien muokkaukseen
         void onEditClasses();
 
+        // Luo tai poistaa sub-pilvi luokalle kun pistekoko muuttuu
+        void applyClassPointSize( int classCode, int size );
+        void removeClassSizeSubCloud( int classCode );
+        void clearAllSizeSubClouds();
+
         // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
         // dlg: jos != nullptr, päivitetään myös dialogin widgetit
         void loadSettingsFromFile( const QString &path,
@@ -173,6 +178,11 @@ namespace MaastoPlugin
 
         QMap<int, ClassDefinition> m_classDefinitions;
         QMap<int, int>             m_classCounts;
+
+        // Luokkakohtaiset pistekoot (0 = käytä globaalia oletusta)
+        QMap<int, int>             m_classPointSizes;
+        // Luokkakohtaiset sub-pilvet (luokkakoodi → väliaikainen ccPointCloud*)
+        QMap<int, ccPointCloud*>   m_sizeSubClouds;
 
         std::map<unsigned, int>   m_indexHitCount;
         std::vector<ccHObject*>   m_meshObjects;

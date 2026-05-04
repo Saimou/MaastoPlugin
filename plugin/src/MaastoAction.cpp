@@ -112,6 +112,14 @@ namespace MaastoPlugin
         }
         removeSelectionOnlyCloud();
 
+        // Poista kaikki 3D-prismat DB-puusta
+        for ( ccHObject *obj : m_meshObjects )
+            m_appInterface->removeFromDB( obj, true );
+        m_meshObjects.clear();
+
+        // Poista pistekoko-sub-pilvet DB-puusta (pääpilven lapset)
+        clearAllSizeSubClouds();
+
         // Palauta pistepilvi alkutilaan ennen tuhoamista
         removePtcColors();
         resetVisibility();
@@ -819,9 +827,11 @@ namespace MaastoPlugin
         removePtcColors();
         resetVisibility();
 
-        // Jos pilvi vaihtuu, nollaa luokkamääritykset ja polkunäyttö
+        // Jos pilvi vaihtuu, nollaa luokkamääritykset, polkunäyttö ja pistekoko-sub-pilvet
         if ( m_cloud != cloud )
         {
+            clearAllSizeSubClouds();
+            m_classPointSizes.clear();
             m_classDefinitions.clear();
             m_classCounts.clear();
             m_ptcFilePath = "";
@@ -957,15 +967,17 @@ namespace MaastoPlugin
         // Count-sarake näytetään aina kun pilvi on valittu
         const bool hasCloud = ( m_cloud != nullptr ) && !values.isEmpty();
 
-        // Sarakeindeksit: Value=0, Show=1, Name=2(classif), Color=3(classif), Count=2 tai 4
+        // Sarakeindeksit:
+        //   isClassif: Value=0, Show=1, Name=2, Color=3, Koko=4, Count=5
+        //   muu:       Value=0, Show=1, Count=2
         if ( hasCloud )
         {
             if ( isClassif )
             {
-                // Value | Show | Name | Color | Count
-                m_listWidget->setColumnCount( 5 );
+                // Value | Show | Name | Color | Koko | Count
+                m_listWidget->setColumnCount( 6 );
                 m_listWidget->setHeaderHidden( false );
-                m_listWidget->setHeaderLabels( { "Value", "Show", "Name", "Color", "Count" } );
+                m_listWidget->setHeaderLabels( { "Value", "Show", "Name", "Color", "Koko", "Count" } );
                 m_listWidget->header()->setStretchLastSection( false );
                 m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::ResizeToContents );
                 m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::Fixed );
@@ -973,7 +985,9 @@ namespace MaastoPlugin
                 m_listWidget->header()->setSectionResizeMode( 2, QHeaderView::Stretch );
                 m_listWidget->header()->setSectionResizeMode( 3, QHeaderView::Fixed );
                 m_listWidget->header()->resizeSection( 3, 40 );
-                m_listWidget->header()->setSectionResizeMode( 4, QHeaderView::ResizeToContents );
+                m_listWidget->header()->setSectionResizeMode( 4, QHeaderView::Fixed );
+                m_listWidget->header()->resizeSection( 4, 65 );
+                m_listWidget->header()->setSectionResizeMode( 5, QHeaderView::ResizeToContents );
             }
             else
             {
@@ -1026,10 +1040,31 @@ namespace MaastoPlugin
                 }
             }
 
+            // Koko-sarake (col 4): SpinBox kun isClassif
+            if ( isClassif && hasCloud )
+            {
+                QSpinBox *sb = new QSpinBox( m_listWidget );
+                sb->setMinimum( 0 );
+                sb->setMaximum( 16 );
+                sb->setSpecialValueText( "Def" );
+                sb->setValue( m_classPointSizes.value( intVal, 0 ) );
+                sb->setFrame( false );
+                // Tallennetaan classCode SpinBoxiin jotta signaali löytää sen
+                sb->setProperty( "classCode", intVal );
+                m_listWidget->setItemWidget( item, 4, sb );
+
+                connect( sb, QOverload<int>::of( &QSpinBox::valueChanged ),
+                         this, [this, intVal]( int newSize )
+                         {
+                             m_classPointSizes[intVal] = newSize;
+                             applyClassPointSize( intVal, newSize );
+                         } );
+            }
+
             // Count-sarake: oikea indeksi riippuu isClassif:stä
             if ( hasCloud )
             {
-                const int countCol = isClassif ? 4 : 2;
+                const int countCol = isClassif ? 5 : 2;
                 const int count = m_classCounts.value( intVal, 0 );
                 item->setText( countCol, QString::number( count ) );
                 item->setTextAlignment( countCol, Qt::AlignRight | Qt::AlignVCenter );
@@ -1249,6 +1284,129 @@ namespace MaastoPlugin
         m_cloud->showSF( false );
         m_cloud->prepareDisplayForRefresh();
         m_ptcColorsApplied = false;
+    }
+
+    // ----------------------------------------------------------------
+    // Luokkakohtaiset pistekoko-sub-pilvet
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::removeClassSizeSubCloud( int classCode )
+    {
+        if ( !m_sizeSubClouds.contains( classCode ) )
+            return;
+
+        ccPointCloud *sub = m_sizeSubClouds[classCode];
+        if ( m_cloud && m_cloud->getChildrenNumber() > 0 )
+        {
+            // Etsi ja poista lapsista
+            for ( unsigned i = 0; i < m_cloud->getChildrenNumber(); ++i )
+            {
+                if ( m_cloud->getChild( i ) == sub )
+                {
+                    m_cloud->removeChild( i );
+                    break;
+                }
+            }
+        }
+        // DP_PARENT_OF_OTHER huolehtii poistosta, mutta varmistetaan
+        m_sizeSubClouds.remove( classCode );
+    }
+
+    void MaastoDialog::clearAllSizeSubClouds()
+    {
+        if ( !m_cloud )
+        {
+            // Pilvi poistettu — tyhjennä pelkästään map
+            for ( ccPointCloud *sub : m_sizeSubClouds )
+                delete sub;
+            m_sizeSubClouds.clear();
+            return;
+        }
+
+        // Poista lapset käänteisessä järjestyksessä (turvallisempaa)
+        for ( int code : m_sizeSubClouds.keys() )
+            removeClassSizeSubCloud( code );
+
+        m_sizeSubClouds.clear();
+    }
+
+    void MaastoDialog::applyClassPointSize( int classCode, int size )
+    {
+        if ( !m_cloud )
+            return;
+
+        if ( size == 0 )
+        {
+            // Palautetaan default — poistetaan sub-pilvi jos olemassa
+            removeClassSizeSubCloud( classCode );
+            m_appInterface->refreshAll();
+            return;
+        }
+
+        // Poistetaan vanha sub-pilvi ensin
+        removeClassSizeSubCloud( classCode );
+
+        // Haetaan Classification-kenttä
+        const int sfIdx = m_cloud->getScalarFieldIndexByName( "Classification" );
+        if ( sfIdx < 0 )
+            return;
+
+        CCCoreLib::ScalarField *sf = m_cloud->getScalarField( sfIdx );
+        if ( !sf )
+            return;
+
+        // Kerää pisteiden indeksit joiden luokka == classCode
+        std::vector<unsigned> indices;
+        indices.reserve( 1024 );
+        const float targetVal = static_cast<float>( classCode );
+        for ( unsigned i = 0; i < m_cloud->size(); ++i )
+        {
+            if ( sf->getValue( i ) == targetVal )
+                indices.push_back( i );
+        }
+
+        if ( indices.empty() )
+            return;
+
+        // Luo sub-pilvi
+        CCCoreLib::ReferenceCloud refCloud( m_cloud );
+        refCloud.reserve( static_cast<unsigned>( indices.size() ) );
+        for ( unsigned idx : indices )
+            refCloud.addPointIndex( idx );
+
+        ccPointCloud *sub = m_cloud->partialClone( &refCloud );
+        if ( !sub )
+            return;
+
+        sub->setName( QString( "SizeSubCloud_%1" ).arg( classCode ) );
+        sub->setPointSize( static_cast<unsigned>( size ) );
+
+        // Väritä kiinteällä luokan värillä jos määritelty
+        if ( m_classDefinitions.contains( classCode )
+             && m_classDefinitions[classCode].color.isValid() )
+        {
+            const QColor col = m_classDefinitions[classCode].color;
+            const ccColor::Rgb rgb( static_cast<unsigned char>( col.red() ),
+                                    static_cast<unsigned char>( col.green() ),
+                                    static_cast<unsigned char>( col.blue() ) );
+            sub->setColor( rgb );
+            sub->showColors( true );
+            sub->showSF( false );
+        }
+        else
+        {
+            // Ei väriä — näytä SF:n mukaan kuten pääpilvi
+            sub->showSF( true );
+        }
+
+        sub->setVisible( true );
+
+        // Lisää pääpilven lapseksi (DP_PARENT_OF_OTHER = CC omistaa muistin)
+        m_cloud->addChild( sub, ccHObject::DP_PARENT_OF_OTHER );
+        m_sizeSubClouds[classCode] = sub;
+
+        m_cloud->prepareDisplayForRefresh_recursive();
+        m_appInterface->refreshAll();
     }
 
     // ----------------------------------------------------------------
@@ -1883,6 +2041,14 @@ namespace MaastoPlugin
                 hiddenValues.insert( item->text( 0 ).toFloat() );
                 allShown = false;
             }
+        }
+
+        // Synkronoi sub-pilvien näkyvyys Show-tilan mukaan
+        for ( auto it = m_sizeSubClouds.begin(); it != m_sizeSubClouds.end(); ++it )
+        {
+            const bool visible = !hiddenValues.contains( static_cast<float>( it.key() ) );
+            it.value()->setVisible( visible );
+            it.value()->prepareDisplayForRefresh();
         }
 
         // Jos kaikki näkyvissä → poista maski
