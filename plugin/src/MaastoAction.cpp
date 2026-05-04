@@ -41,6 +41,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFile>
+#include <QTextStream>
 #include <QMessageBox>
 
 #include "ccGLWindowSignalEmitter.h"
@@ -224,6 +225,10 @@ namespace MaastoPlugin
             connect( &dlg, &SettingsDialog::ptcFileLoaded,
                 this, [this]( const QString &path ) { loadPtcFile( path ); } );
 
+            // Luokkamäärittelyn tallennus
+            connect( &dlg, &SettingsDialog::savePtcRequested,
+                this, &MaastoDialog::onSavePtc );
+
             // Tallennus- ja lataussignaalit
             connect( &dlg, &SettingsDialog::saveRequested,
                 this, &MaastoDialog::onSaveSettings );
@@ -259,6 +264,10 @@ namespace MaastoPlugin
             m_showAllButton->setChecked( true );
             m_showAllButton->setFixedHeight( 22 );
             arvoHeader->addWidget( m_showAllButton );
+            m_editClassesButton = new QPushButton( "Muokkaa", this );
+            m_editClassesButton->setFixedHeight( 22 );
+            m_editClassesButton->setEnabled( false ); // aktivoituu kun .ptc ladattu
+            arvoHeader->addWidget( m_editClassesButton );
             layout->addLayout( arvoHeader );
         }
         m_listWidget = new QTreeWidget( this );
@@ -309,6 +318,10 @@ namespace MaastoPlugin
                 applyColorField( fieldName );
                 populateVisibilityList( fieldName );
             } );
+
+        // Muokkaa-nappi → avaa ClassEditorDialog
+        connect( m_editClassesButton, &QPushButton::clicked,
+            this, &MaastoDialog::onEditClasses );
 
         // Toggle: Show all / Hide all  (Show-sarake)
         connect( m_showAllButton, &QPushButton::toggled,
@@ -914,7 +927,28 @@ namespace MaastoPlugin
         m_listWidget->blockSignals( true );
         m_listWidget->clear();
 
-        const QStringList values = getScalarFieldValues( m_cloud, fieldName );
+        QStringList values = getScalarFieldValues( m_cloud, fieldName );
+
+        // Jos Classification-kenttä on valittu ja luokkamäärittely on ladattu,
+        // lisätään mapista löytyvät luokat jotka eivät esiinny pistepilvessä (count=0)
+        const bool isClassifField = ( fieldName.compare( "Classification", Qt::CaseInsensitive ) == 0 );
+        if ( isClassifField && !m_classDefinitions.isEmpty() )
+        {
+            QSet<int> existingVals;
+            for ( const QString &v : values )
+                existingVals.insert( v.toInt() );
+
+            for ( int key : m_classDefinitions.keys() )
+            {
+                if ( !existingVals.contains( key ) )
+                    values.append( QString::number( key ) );
+            }
+
+            // Järjestä numerisesti
+            std::sort( values.begin(), values.end(),
+                []( const QString &a, const QString &b )
+                { return a.toInt() < b.toInt(); } );
+        }
 
         // Näytetään Name + Color sarakkeet jos Scalar field on Classification ja .ptc on ladattu
         const bool isClassif = ( fieldName.compare( "Classification", Qt::CaseInsensitive ) == 0 )
@@ -1028,8 +1062,31 @@ namespace MaastoPlugin
         m_targetClassComboBox->blockSignals( true );
         m_targetClassComboBox->clear();
 
-        // Samat arvot kuin Arvot-listassa — haetaan valitun scalar-kentän mukaan
-        const QStringList values = getScalarFieldValues( m_cloud, m_valuesComboBox->currentText() );
+        const QString fieldName = m_valuesComboBox->currentText();
+        QStringList values = getScalarFieldValues( m_cloud, fieldName );
+
+        // Jos Classification-kenttä on valittu ja luokkamäärittely on ladattu,
+        // lisätään myös mapista löytyvät luokat joilla ei ole pisteitä (count=0)
+        const bool isClassif = ( fieldName.compare( "Classification", Qt::CaseInsensitive ) == 0 )
+                               && !m_classDefinitions.isEmpty();
+        if ( isClassif )
+        {
+            QSet<int> existingVals;
+            for ( const QString &v : values )
+                existingVals.insert( v.toInt() );
+
+            for ( int key : m_classDefinitions.keys() )
+            {
+                if ( !existingVals.contains( key ) )
+                    values.append( QString::number( key ) );
+            }
+
+            // Järjestä numerisesti
+            std::sort( values.begin(), values.end(),
+                []( const QString &a, const QString &b )
+                { return a.toInt() < b.toInt(); } );
+        }
+
         m_targetClassComboBox->addItems( values );
         m_targetClassComboBox->blockSignals( false );
 
@@ -1966,6 +2023,98 @@ namespace MaastoPlugin
     }
 
     // ----------------------------------------------------------------
+    // onSavePtc
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::onSavePtc()
+    {
+        if ( m_classDefinitions.isEmpty() )
+        {
+            QMessageBox::warning( this, "Virhe",
+                "Luokkamäärittelytiedostoa ei ole ladattu.\n"
+                "Lataa ensin .ptc-tiedosto asetuksista." );
+            return;
+        }
+
+        // Oletushakemisto: ladatun .ptc-tiedoston kansio
+        const QString defaultDir = !m_ptcFilePath.isEmpty()
+            ? QFileInfo( m_ptcFilePath ).absolutePath()
+            : ( !m_lastSaveDir.isEmpty() ? m_lastSaveDir : QDir::homePath() );
+
+        const QString path = QFileDialog::getSaveFileName(
+            this,
+            "Tallenna luokkamäärittely",
+            defaultDir + "/MaastoPlugin.ptc",
+            "PTC files (*.ptc)" );
+
+        if ( path.isEmpty() )
+            return;
+
+        QFile file( path );
+        if ( !file.open( QIODevice::WriteOnly | QIODevice::Text ) )
+        {
+            QMessageBox::warning( this, "Virhe",
+                QString( "Tiedoston kirjoittaminen epäonnistui:\n%1" ).arg( path ) );
+            return;
+        }
+
+        QTextStream out( &file );
+
+        // Kirjoitetaan jokainen luokka kahdella rivillä + tyhjä rivi väliin
+        // Rivi 1: <koodi>\t\t<nimi>
+        // Rivi 2: *\t\t<koodi>\t<R,G,B>
+        const QList<int> keys = m_classDefinitions.keys(); // nouseva järjestys
+        for ( int i = 0; i < keys.size(); ++i )
+        {
+            const ClassDefinition &def = m_classDefinitions[ keys[i] ];
+            const QString name  = def.name.isEmpty() ? "" : def.name;
+            const QColor  color = def.color.isValid() ? def.color : QColor( 0, 0, 0 );
+
+            // Rivi 1: koodi \t\t nimi
+            out << def.value << "\t\t" << name << "\n";
+
+            // Rivi 2: * \t\t koodi \t R,G,B
+            out << "*\t\t" << def.value << "\t"
+                << color.red() << "," << color.green() << "," << color.blue() << "\n";
+
+            // Tyhjä rivi luokkien väliin (paitsi viimeisen jälkeen)
+            if ( i < keys.size() - 1 )
+                out << "\n";
+        }
+
+        file.close();
+
+        m_appInterface->dispToConsole(
+            QString( "MaastoPlugin: Luokkamäärittely tallennettu: %1" ).arg( path ),
+            ccMainAppInterface::STD_CONSOLE_MESSAGE );
+    }
+
+    // ----------------------------------------------------------------
+    // onEditClasses
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::onEditClasses()
+    {
+        ClassEditorDialog dlg( m_classDefinitions, this );
+        if ( dlg.exec() != QDialog::Accepted )
+            return;
+
+        m_classDefinitions = dlg.classDefinitions();
+
+        // Nappi pysyy aktiivisena (luokkamäärittely on nyt muistissa)
+        if ( m_editClassesButton )
+            m_editClassesButton->setEnabled( true );
+
+        // Päivitä pääikkunan lista
+        populateValueList( m_valuesComboBox->currentText() );
+
+        // Päivitä 3D-värit jos Classification-väritys on käytössä
+        const QString colorField = m_colorComboBox->currentText();
+        if ( colorField.compare( "Classification", Qt::CaseInsensitive ) == 0 )
+            applyPtcColors();
+    }
+
+    // ----------------------------------------------------------------
     // onLoadSettings
     // ----------------------------------------------------------------
 
@@ -2109,6 +2258,10 @@ namespace MaastoPlugin
         m_classDefinitions = defs;
 
         m_ptcFilePath = filePath;
+
+        // Aktivoi Muokkaa-nappi nyt kun luokkamäärittely on ladattu
+        if ( m_editClassesButton )
+            m_editClassesButton->setEnabled( true );
 
         // Päivitä Luokat-lista
         populateValueList( m_valuesComboBox->currentText() );

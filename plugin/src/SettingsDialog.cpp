@@ -56,27 +56,41 @@ namespace MaastoPlugin
         // ── Luokkamäärittelytiedosto ──────────────────────────────
         layout->addWidget( new QLabel( "Luokkamäärittelytiedosto:", this ) );
 
-        QPushButton *readFileButton = new QPushButton( "Read class definition file", this );
-        layout->addWidget( readFileButton );
-
-        m_ptcFileLabel = new QLabel( currentPtcPath, this );
-        m_ptcFileLabel->setVisible( !currentPtcPath.isEmpty() );
-        m_ptcFileLabel->setWordWrap( true );
-        m_ptcFileLabel->setStyleSheet( "color: gray; font-size: 9pt;" );
-        layout->addWidget( m_ptcFileLabel );
-
-        connect( readFileButton, &QPushButton::clicked, this, [this]()
         {
-            const QString file = QFileDialog::getOpenFileName(
-                this, "Open class definition", "",
-                "PTC files (*.ptc);;All files (*.*)" );
-            if ( !file.isEmpty() )
+            QHBoxLayout *ptcRow = new QHBoxLayout();
+            ptcRow->setContentsMargins( 0, 0, 0, 0 );
+
+            QPushButton *savePtcButton = new QPushButton( "Tallenna luokkamäärittely", this );
+            QPushButton *readFileButton = new QPushButton( "Read class definition file", this );
+
+            ptcRow->addWidget( savePtcButton );
+            ptcRow->addWidget( readFileButton );
+            layout->addLayout( ptcRow );
+
+            m_ptcFileLabel = new QLabel( currentPtcPath, this );
+            m_ptcFileLabel->setVisible( !currentPtcPath.isEmpty() );
+            m_ptcFileLabel->setWordWrap( true );
+            m_ptcFileLabel->setStyleSheet( "color: gray; font-size: 9pt;" );
+            layout->addWidget( m_ptcFileLabel );
+
+            connect( savePtcButton, &QPushButton::clicked, this, [this]()
             {
-                m_ptcFileLabel->setText( file );
-                m_ptcFileLabel->setVisible( true );
-                emit ptcFileLoaded( file );
-            }
-        } );
+                emit savePtcRequested();
+            } );
+
+            connect( readFileButton, &QPushButton::clicked, this, [this]()
+            {
+                const QString file = QFileDialog::getOpenFileName(
+                    this, "Open class definition", "",
+                    "PTC files (*.ptc);;All files (*.*)" );
+                if ( !file.isEmpty() )
+                {
+                    m_ptcFileLabel->setText( file );
+                    m_ptcFileLabel->setVisible( true );
+                    emit ptcFileLoaded( file );
+                }
+            } );
+        }
 
         // ── Erotin ───────────────────────────────────────────────
         {

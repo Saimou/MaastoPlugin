@@ -50,6 +50,7 @@ namespace MaastoPlugin
 
     signals:
         void ptcFileLoaded( const QString &filePath );
+        void savePtcRequested();
         void saveRequested();
         void loadRequested();
 

@@ -15,6 +15,7 @@
 #include <map>
 
 #include "ClassDefinition.h"
+#include "ClassEditorDialog.h"
 #include "CCGeom.h"
 
 class ccMainAppInterface;
@@ -94,6 +95,12 @@ namespace MaastoPlugin
         void onSaveSettings();
         void onLoadSettings( MaastoPlugin::SettingsDialog *dlg );
 
+        // Tallentaa luokkamäärittelyn .ptc-tiedostoon
+        void onSavePtc();
+
+        // Avaa ClassEditorDialog luokkien muokkaukseen
+        void onEditClasses();
+
         // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
         // dlg: jos != nullptr, päivitetään myös dialogin widgetit
         void loadSettingsFromFile( const QString &path,
@@ -115,6 +122,7 @@ namespace MaastoPlugin
         QTreeWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
         QPushButton        *m_showAllButton;
+        QPushButton        *m_editClassesButton;
 
         QComboBox          *m_targetClassComboBox;
         QComboBox          *m_colorComboBox;
