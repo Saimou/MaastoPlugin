@@ -2113,10 +2113,26 @@ namespace MaastoPlugin
         if ( m_cloud == nullptr )
             return;
 
+        // Palauta kaikki sub-pilvet näkyviksi
+        bool subCloudChanged = false;
+        for ( auto it = m_sizeSubClouds.begin(); it != m_sizeSubClouds.end(); ++it )
+        {
+            it.value()->setVisible( true );
+            it.value()->prepareDisplayForRefresh();
+            subCloudChanged = true;
+        }
+
         if ( m_cloud->isVisibilityTableInstantiated() )
         {
             m_cloud->unallocateVisibilityArray();
             m_cloud->prepareDisplayForRefresh();
+            m_appInterface->refreshAll();
+        }
+        else if ( subCloudChanged )
+        {
+            m_updatingCloud = true;
+            m_appInterface->updateUI();
+            m_updatingCloud = false;
             m_appInterface->refreshAll();
         }
     }
