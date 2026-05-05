@@ -356,6 +356,7 @@ namespace MaastoPlugin
                 for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
                     m_listWidget->topLevelItem( i )->setCheckState( 0, state );
                 m_listWidget->blockSignals( false );
+                refreshHighlights();
             } );
 
         // itemChanged: erottele Value-sarake (col 0) ja Show-sarake (col 1)
@@ -979,15 +980,13 @@ namespace MaastoPlugin
                 m_listWidget->setHeaderHidden( false );
                 m_listWidget->setHeaderLabels( { "Value", "Show", "Name", "Color", "Koko", "Count" } );
                 m_listWidget->header()->setStretchLastSection( false );
-                m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::ResizeToContents );
-                m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::Fixed );
+                m_listWidget->header()->setSectionResizeMode( QHeaderView::Interactive );
+                m_listWidget->header()->resizeSection( 0, 50 );
                 m_listWidget->header()->resizeSection( 1, 40 );
-                m_listWidget->header()->setSectionResizeMode( 2, QHeaderView::Stretch );
-                m_listWidget->header()->setSectionResizeMode( 3, QHeaderView::Fixed );
+                m_listWidget->header()->resizeSection( 2, 120 );
                 m_listWidget->header()->resizeSection( 3, 40 );
-                m_listWidget->header()->setSectionResizeMode( 4, QHeaderView::Fixed );
                 m_listWidget->header()->resizeSection( 4, 65 );
-                m_listWidget->header()->setSectionResizeMode( 5, QHeaderView::ResizeToContents );
+                m_listWidget->header()->resizeSection( 5, 55 );
             }
             else
             {
@@ -996,10 +995,10 @@ namespace MaastoPlugin
                 m_listWidget->setHeaderHidden( false );
                 m_listWidget->setHeaderLabels( { "Value", "Show", "Count" } );
                 m_listWidget->header()->setStretchLastSection( false );
-                m_listWidget->header()->setSectionResizeMode( 0, QHeaderView::Stretch );
-                m_listWidget->header()->setSectionResizeMode( 1, QHeaderView::Fixed );
+                m_listWidget->header()->setSectionResizeMode( QHeaderView::Interactive );
+                m_listWidget->header()->resizeSection( 0, 120 );
                 m_listWidget->header()->resizeSection( 1, 40 );
-                m_listWidget->header()->setSectionResizeMode( 2, QHeaderView::ResizeToContents );
+                m_listWidget->header()->resizeSection( 2, 55 );
             }
         }
         else
@@ -1072,6 +1071,10 @@ namespace MaastoPlugin
         }
 
         m_listWidget->blockSignals( false );
+
+        // Jos listassa on valittuja arvoja (palautettu edellisestä tilasta),
+        // päivitä korostus — itemChanged ei laukea signaalien ollessa blokattuna
+        refreshHighlights();
 
         // Päivitä Show all -napin tila
         if ( m_showAllButton && hasCloud )
