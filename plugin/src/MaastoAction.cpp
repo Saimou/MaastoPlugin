@@ -112,6 +112,9 @@ namespace MaastoPlugin
         }
         removeSelectionOnlyCloud();
 
+        // Poista highlight-pistepilvet DB-puusta
+        removeHighlightObjects();
+
         // Poista kaikki 3D-prismat DB-puusta
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
@@ -1125,14 +1128,33 @@ namespace MaastoPlugin
                 { return a.toInt() < b.toInt(); } );
         }
 
-        m_targetClassComboBox->addItems( values );
+        for ( const QString &v : values )
+        {
+            if ( isClassif )
+            {
+                const int code = v.toInt();
+                const QString name = m_classDefinitions.contains( code )
+                                     ? m_classDefinitions[code].name
+                                     : QString();
+                const QString label = name.isEmpty()
+                                      ? v
+                                      : QString( "%1 - %2" ).arg( code ).arg( name );
+                m_targetClassComboBox->addItem( label, code );
+            }
+            else
+            {
+                m_targetClassComboBox->addItem( v );
+            }
+        }
         m_targetClassComboBox->blockSignals( false );
 
         if ( values.isEmpty() )
             return;
 
         // Säilytä edellinen valinta jos mahdollista
-        int keepIdx = values.indexOf( keepValue );
+        int keepIdx = isClassif
+                      ? m_targetClassComboBox->findData( keepValue.toInt() )
+                      : m_targetClassComboBox->findText( keepValue );
         m_targetClassComboBox->setCurrentIndex( keepIdx >= 0 ? keepIdx : 0 );
     }
 
@@ -1458,7 +1480,9 @@ namespace MaastoPlugin
             return;
         }
 
-        const ScalarType targetValue = static_cast<ScalarType>( targetStr.toFloat() );
+        const QVariant targetData = m_targetClassComboBox->currentData();
+        const ScalarType targetValue = static_cast<ScalarType>(
+            targetData.isValid() ? targetData.toFloat() : targetStr.toFloat() );
 
         // Luokitellaan vain pisteet jotka ovat vähintään N prisman sisällä
         const int minHits = m_minPolygonCountSpinBox ? m_minPolygonCountSpinBox->value() : 1;
@@ -1775,8 +1799,16 @@ namespace MaastoPlugin
             highlighted->showColors( true );
         }
 
-        // Highlight-pisteiden koko asetuksista
-        highlighted->setPointSize( static_cast<unsigned>( m_highlightPointSize ) );
+        // Highlight-pisteiden koko: käytetään suurinta valittujen luokkien
+        // luokkakohtaisesta koosta (m_classPointSizes), tai globaalia m_highlightPointSize
+        int effectiveSize = m_highlightPointSize;
+        for ( float v : selectedValues )
+        {
+            const int code = static_cast<int>( v );
+            if ( m_classPointSizes.contains( code ) && m_classPointSizes[code] > 0 )
+                effectiveSize = qMax( effectiveSize, m_classPointSizes[code] + 1 );
+        }
+        highlighted->setPointSize( static_cast<unsigned>( effectiveSize ) );
 
         return highlighted;
     }
@@ -1816,6 +1848,7 @@ namespace MaastoPlugin
                 m_showOnlyButton->setEnabled( false );
             }
             m_showOnlyMode = false;
+            m_cloud->prepareDisplayForRefresh_recursive();
             m_appInterface->refreshAll();
             return;
         }
@@ -1825,6 +1858,7 @@ namespace MaastoPlugin
         {
             if ( m_showOnlyButton )
                 m_showOnlyButton->setEnabled( !m_indexHitCount.empty() );
+            m_cloud->prepareDisplayForRefresh_recursive();
             m_appInterface->refreshAll();
             return;
         }
@@ -1869,6 +1903,7 @@ namespace MaastoPlugin
         // Ei kutsuta updateUI():ta tässä — se triggeröisi onNewSelection() → updateCloud()
         // → populateColorComboBox() → applyColorField() → updateUI() silmukan
         // joka tyhjentäisi m_indexHitCount:n tai estäisi luokittelun
+        m_cloud->prepareDisplayForRefresh_recursive();
         m_appInterface->refreshAll();
     }
 
