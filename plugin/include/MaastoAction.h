@@ -11,12 +11,14 @@
 #include <QColor>
 #include <QSet>
 #include <QMap>
+#include <QVector>
 #include <vector>
 #include <map>
 
 #include "ClassDefinition.h"
 #include "ClassEditorDialog.h"
 #include "CCGeom.h"
+#include "ccColorTypes.h"
 
 class ccMainAppInterface;
 class ccPointCloud;
@@ -139,6 +141,8 @@ namespace MaastoPlugin
         bool                m_updatingVisibility;
         bool                m_updatingShow;
         bool                m_ptcColorsApplied;
+        bool                m_hadColorsBeforePtc;  // oliko RGB-taulukko olemassa ennen ptc-väritystä
+        QVector<ccColor::Rgb> m_savedColors;        // alkuperäiset vertex-RGB-värit
 
         QMap<QString, bool> m_showStates;   // arvo → Show-tila (true=näkyvä)
 

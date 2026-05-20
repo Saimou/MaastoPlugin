@@ -1237,60 +1237,50 @@ namespace MaastoPlugin
         if ( !sf )
             return;
 
-        sf->computeMinAndMax();
-
-        // Absoluuttinen min/max luokkakoodeista
-        const double minVal = static_cast<double>( m_classDefinitions.firstKey() );
-        const double maxVal = static_cast<double>( m_classDefinitions.lastKey() );
-        const double range  = ( maxVal > minVal ) ? ( maxVal - minVal ) : 1.0;
-
-        // Rakenna absoluuttinen color scale — vertex-RGB-taulukkoa ei kosketa
-        ccColorScale::Shared scale = ccColorScale::Create( "PtcClasses" );
-        scale->clear();
-        scale->setAbsolute( minVal, maxVal );
-
-        // Nearest-neighbour: vaihda väri puolivälissä kahden luokkakoodin välillä.
-        // Koska luokkakoodit ovat kokonaislukuja, puoliväliarvot (1.5, 2.5 jne.)
-        // eivät esiinny oikeassa datassa → jokainen piste saa täsmälleen oikean värin.
-        // ccColorScale::update() vaatii että ensimmäinen step = 0.0 ja viimeinen = 1.0.
-        const QList<int> keys = m_classDefinitions.keys();  // QMap on järjestetty
-
-        for ( int i = 0; i < keys.size(); ++i )
+        // --- Tallenna alkuperäinen vertex-RGB ennen ylikirjoitusta (vain kerran) ---
+        if ( !m_ptcColorsApplied )
         {
-            const double relPos = ( keys[i] - minVal ) / range;
-            const QColor col    = m_classDefinitions[keys[i]].color.isValid()
-                                  ? m_classDefinitions[keys[i]].color
-                                  : QColor( 128, 128, 128 );
-
-            if ( i == 0 )
+            m_hadColorsBeforePtc = m_cloud->hasColors();
+            m_savedColors.clear();
+            if ( m_hadColorsBeforePtc )
             {
-                // Ensimmäinen step täsmälleen 0.0:ssa (update() vaatii tämän)
-                scale->insert( ccColorScaleElement( 0.0, col ), false );
-            }
-            else
-            {
-                // Vaihda väri puolivälissä edellisen ja tämän luokan välillä
-                const double prevRelPos = ( keys[i - 1] - minVal ) / range;
-                const double mid = ( prevRelPos + relPos ) / 2.0;
-                scale->insert( ccColorScaleElement( mid, col ), false );
-            }
-
-            if ( i == keys.size() - 1 )
-            {
-                // Viimeinen step täsmälleen 1.0:ssa (update() vaatii tämän)
-                scale->insert( ccColorScaleElement( 1.0, col ), false );
+                const unsigned ptCount = m_cloud->size();
+                m_savedColors.reserve( static_cast<int>( ptCount ) );
+                for ( unsigned p = 0; p < ptCount; ++p )
+                {
+                    const ccColor::Rgba &c = m_cloud->getPointColor( p );
+                    m_savedColors.append( ccColor::Rgb( c.r, c.g, c.b ) );
+                }
             }
         }
 
-        scale->update();
+        // --- Varmista että RGB-taulukko on olemassa ---
+        if ( !m_cloud->hasColors() )
+        {
+            if ( !m_cloud->resizeTheRGBTable( false ) )
+                return;
+        }
 
-        sf->setColorScale( scale );
-        sf->setColorRampSteps( 256 );
+        // --- Kirjoita .ptc-värit suoraan vertex-taulukkoon ---
+        // Tuntemattomat koodit saavat harmaan värin.
+        const unsigned ptCount = m_cloud->size();
+        for ( unsigned p = 0; p < ptCount; ++p )
+        {
+            const int code = static_cast<int>( sf->getValue( p ) );
+            QColor qcol;
+            if ( m_classDefinitions.contains( code ) && m_classDefinitions[code].color.isValid() )
+                qcol = m_classDefinitions[code].color;
+            else
+                qcol = QColor( 128, 128, 128 );
 
-        // Aktivoi SF-näyttö — vertex-RGB-taulukko jää täysin koskemattomaksi
-        m_cloud->setCurrentDisplayedScalarField( sfIdx );
-        m_cloud->showSF( true );
-        m_cloud->showColors( false );
+            m_cloud->setPointColor( p, ccColor::Rgb(
+                static_cast<unsigned char>( qcol.red() ),
+                static_cast<unsigned char>( qcol.green() ),
+                static_cast<unsigned char>( qcol.blue() ) ) );
+        }
+
+        m_cloud->showColors( true );
+        m_cloud->showSF( false );
         m_cloud->prepareDisplayForRefresh();
         m_ptcColorsApplied = true;
 
@@ -1305,8 +1295,22 @@ namespace MaastoPlugin
         if ( !m_ptcColorsApplied || !m_cloud )
             return;
 
-        // Vertex-RGB-taulukkoa ei ole koskaan muutettu — riittää SF-näytön sammutus
-        m_cloud->showSF( false );
+        if ( m_hadColorsBeforePtc && !m_savedColors.isEmpty() )
+        {
+            // Palautetaan alkuperäiset vertex-RGB-värit
+            const unsigned ptCount = m_cloud->size();
+            for ( unsigned p = 0; p < ptCount && p < static_cast<unsigned>( m_savedColors.size() ); ++p )
+                m_cloud->setPointColor( p, m_savedColors[p] );
+            m_cloud->showColors( true );
+        }
+        else
+        {
+            // Pistepilvessä ei ollut RGB-taulukkoa alun perin
+            m_cloud->unallocateColors();
+            m_cloud->showColors( false );
+        }
+
+        m_savedColors.clear();
         m_cloud->prepareDisplayForRefresh();
         m_ptcColorsApplied = false;
     }
