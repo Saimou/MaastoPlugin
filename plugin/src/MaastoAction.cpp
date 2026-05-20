@@ -1249,11 +1249,14 @@ namespace MaastoPlugin
         scale->clear();
         scale->setAbsolute( minVal, maxVal );
 
-        // Nearest-neighbour: vaihda väri puolivälissä kahden luokkakoodin välillä.
-        // Koska luokkakoodit ovat kokonaislukuja, puoliväliarvot (1.5, 2.5 jne.)
-        // eivät esiinny oikeassa datassa → jokainen piste saa täsmälleen oikean värin.
-        // ccColorScale::update() vaatii että ensimmäinen step = 0.0 ja viimeinen = 1.0.
+        // Hard-step -tekniikka: jokaisen luokan kohdalla lisätään kaksi stepiä —
+        // (relPos - ε) edellisen luokan värillä ja (relPos) tämän luokan värillä.
+        // Näin interpolaatioväli on käytännössä nolla → jokainen piste saa
+        // täsmälleen oman luokkansa värin riippumatta luokkakoodien väleistä.
+        // ε = 0.5/range (puoli yksikköä skaalattuna), riittää kokonaislukukoodeille.
+        // ccColorScale::update() vaatii ensimmäinen step = 0.0 ja viimeinen = 1.0.
         const QList<int> keys = m_classDefinitions.keys();  // QMap on järjestetty
+        const double eps = ( range > 0.0 ) ? ( 0.5 / range ) : 1e-6;
 
         for ( int i = 0; i < keys.size(); ++i )
         {
@@ -1269,10 +1272,14 @@ namespace MaastoPlugin
             }
             else
             {
-                // Vaihda väri puolivälissä edellisen ja tämän luokan välillä
-                const double prevRelPos = ( keys[i - 1] - minVal ) / range;
-                const double mid = ( prevRelPos + relPos ) / 2.0;
-                scale->insert( ccColorScaleElement( mid, col ), false );
+                // Edellinen väri loppuu juuri ennen tätä luokkaa
+                const QColor prevCol = m_classDefinitions[keys[i - 1]].color.isValid()
+                                       ? m_classDefinitions[keys[i - 1]].color
+                                       : QColor( 128, 128, 128 );
+                const double boundary = qMax( 0.0, relPos - eps );
+                scale->insert( ccColorScaleElement( boundary, prevCol ), false );
+                // Tämä luokka alkaa täsmälleen relPos:ssa
+                scale->insert( ccColorScaleElement( relPos, col ), false );
             }
 
             if ( i == keys.size() - 1 )
