@@ -1030,15 +1030,22 @@ namespace MaastoPlugin
 
             const int intVal = val.toInt();
 
-            if ( isClassif && m_classDefinitions.contains( intVal ) )
+            if ( isClassif )
             {
-                const ClassDefinition &def = m_classDefinitions[intVal];
-                item->setText( 2, def.name );
-                if ( def.color.isValid() )
+                if ( m_classDefinitions.contains( intVal ) )
                 {
-                    QPixmap px( 20, 20 );
-                    px.fill( def.color );
-                    item->setIcon( 3, QIcon( px ) );
+                    const ClassDefinition &def = m_classDefinitions[intVal];
+                    item->setText( 2, def.name );
+                    if ( def.color.isValid() )
+                    {
+                        QPixmap px( 20, 20 );
+                        px.fill( def.color );
+                        item->setIcon( 3, QIcon( px ) );
+                    }
+                }
+                else
+                {
+                    item->setText( 2, QString( "tmp_%1" ).arg( intVal ) );
                 }
             }
 
@@ -1135,10 +1142,8 @@ namespace MaastoPlugin
                 const int code = v.toInt();
                 const QString name = m_classDefinitions.contains( code )
                                      ? m_classDefinitions[code].name
-                                     : QString();
-                const QString label = name.isEmpty()
-                                      ? v
-                                      : QString( "%1 - %2" ).arg( code ).arg( name );
+                                     : QString( "tmp_%1" ).arg( code );
+                const QString label = QString( "%1 - %2" ).arg( code ).arg( name );
                 m_targetClassComboBox->addItem( label, code );
             }
             else
