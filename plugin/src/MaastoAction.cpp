@@ -43,6 +43,11 @@
 #include <QFile>
 #include <QTextStream>
 #include <QMessageBox>
+#include <QSplitter>
+
+#include "ccPickingHub.h"
+#include "ccPickingListener.h"
+#include "ccGLWindowInterface.h"
 
 #include "ccGLWindowSignalEmitter.h"
 
@@ -119,6 +124,7 @@ namespace MaastoPlugin
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
         m_meshObjects.clear();
+        m_prismData.clear();
 
         // Poista pistekoko-sub-pilvet DB-puusta (pääpilven lapset)
         clearAllSizeSubClouds();
@@ -127,6 +133,92 @@ namespace MaastoPlugin
         removePtcColors();
         resetVisibility();
     }
+
+    // ----------------------------------------------------------------
+    // Point picking
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::removePickMarker()
+    {
+        if ( m_pickMarker )
+        {
+            m_appInterface->removeFromDB( m_pickMarker, true );
+            m_pickMarker = nullptr;
+            ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+            if ( win )
+                win->redraw();
+        }
+    }
+
+    void MaastoDialog::onItemPicked( const ccPickingListener::PickedItem &pi )
+    {
+        if ( !pi.entity )
+            return;
+
+        // --- Koordinaatit ---
+        const CCVector3 &P = pi.P3D;
+
+        // --- Luokkakoodi ja -nimi ---
+        QString classInfo = "—";
+        if ( m_cloud && pi.entity == m_cloud )
+        {
+            // Etsi "Classification"-skalaarikentän indeksi
+            int sfIdx = m_cloud->getScalarFieldIndexByName( "Classification" );
+            if ( sfIdx < 0 )
+            {
+                // Kokeile myös aktiivisella skalaarikentällä jos nimeä ei löydy
+                sfIdx = m_cloud->getCurrentDisplayedScalarFieldIndex();
+            }
+            if ( sfIdx >= 0 )
+            {
+                ScalarType val = m_cloud->getScalarField( sfIdx )->getValue( pi.itemIndex );
+                int code = static_cast<int>( val );
+                if ( m_classDefinitions.contains( code ) )
+                    classInfo = QString( "%1 - %2" ).arg( code )
+                                    .arg( m_classDefinitions[code].name );
+                else
+                    classInfo = QString::number( code );
+            }
+        }
+
+        // --- Päivitä label ---
+        if ( m_pickInfoLabel )
+        {
+            m_pickInfoLabel->setText(
+                QString( "X: %1   Y: %2   Z: %3\nLuokka: %4" )
+                    .arg( P.x, 0, 'f', 3 )
+                    .arg( P.y, 0, 'f', 3 )
+                    .arg( P.z, 0, 'f', 3 )
+                    .arg( classInfo ) );
+            m_pickInfoLabel->setVisible( true );
+        }
+
+        // --- Korostuspiste 3D:ssä ---
+        removePickMarker();
+
+        ccPointCloud *marker = new ccPointCloud( "pick_marker" );
+        if ( marker->reserve( 1 ) )
+        {
+            marker->addPoint( P );
+            marker->setGlobalShift( m_cloud ? m_cloud->getGlobalShift() : CCVector3d( 0, 0, 0 ) );
+            marker->setGlobalScale( m_cloud ? m_cloud->getGlobalScale() : 1.0 );
+            marker->showColors( false );
+            marker->setPointSize( static_cast<unsigned>( m_highlightPointSize + 4 ) );
+            marker->setTempColor( ccColor::Rgba( 255, 64, 0, 255 ) );
+            m_appInterface->addToDB( marker );
+            m_pickMarker = marker;
+        }
+        else
+        {
+            delete marker;
+        }
+
+        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        if ( win )
+            win->redraw();
+    }
+
+    // ----------------------------------------------------------------
 
     MaastoDialog::MaastoDialog( ccMainAppInterface *appInterface, QWidget *parent )
         : QDialog( parent )
@@ -157,6 +249,7 @@ namespace MaastoPlugin
         , m_highlightButton( nullptr )
         , m_clearSelectionButton( nullptr )
         , m_showOnlyButton( nullptr )
+        , m_lockViewButton( nullptr )
         , m_fileButton( nullptr )
         , m_minPolygonCountSpinBox( nullptr )
         , m_nearDistSpinBox( nullptr )
@@ -170,7 +263,9 @@ namespace MaastoPlugin
         , m_measuredZ( 0.0 )
         , m_measureHighlight( nullptr )
         , m_showOnlyMode( false )
+        , m_lockViewMode( false )
         , m_selectionOnlyCloud( nullptr )
+        , m_preLockedPrismCount( 0 )
         , m_drawLineButton( nullptr )
         , m_lineAxisComboBox( nullptr )
         , m_lineThicknessSpinBox( nullptr )
@@ -181,6 +276,11 @@ namespace MaastoPlugin
         , m_lineP2( 0.0f, 0.0f, 0.0f )
         , m_linePoint1Highlight( nullptr )
         , m_linePoint2Highlight( nullptr )
+        , m_lastTargetCode( -1 )
+        , m_pickingHub( nullptr )
+        , m_pickPointButton( nullptr )
+        , m_pickInfoLabel( nullptr )
+        , m_pickMarker( nullptr )
     {
         // Käytä 3D-ikkunan pistekokoa highlight- ja mittauspiste-defaultina
         {
@@ -200,16 +300,47 @@ namespace MaastoPlugin
 
         QVBoxLayout *layout = new QVBoxLayout( this );
 
-        // --- Yläpalkki: Asetukset-nappi vasemmalla, polku-label vieressä ---
+        // --- Yläpalkki: Asetukset-nappi vasemmalla, Poimi piste sen oikealla ---
+        m_pickingHub = appInterface->pickingHub();
         {
             QHBoxLayout *topRow = new QHBoxLayout();
             m_fileButton = new QPushButton( "Asetukset", this );
             m_fileButton->setFixedWidth( 80 );
             topRow->addWidget( m_fileButton );
 
+            m_pickPointButton = new QPushButton( "Poimi piste", this );
+            m_pickPointButton->setFixedWidth( 90 );
+            m_pickPointButton->setCheckable( true );
+            m_pickPointButton->setEnabled( m_pickingHub != nullptr );
+            topRow->addWidget( m_pickPointButton );
+
             topRow->addStretch();
             layout->addLayout( topRow );
         }
+
+        connect( m_pickPointButton, &QPushButton::toggled, this,
+            [this]( bool checked )
+            {
+                if ( !m_pickingHub ) return;
+                if ( checked )
+                {
+                    if ( !m_pickingHub->addListener( this, /*exclusive=*/true,
+                                                     /*autoStart=*/true,
+                                                     ccGLWindowInterface::POINT_PICKING ) )
+                    {
+                        m_pickPointButton->blockSignals( true );
+                        m_pickPointButton->setChecked( false );
+                        m_pickPointButton->blockSignals( false );
+                    }
+                }
+                else
+                {
+                    m_pickingHub->removeListener( this );
+                    removePickMarker();
+                    if ( m_pickInfoLabel )
+                        m_pickInfoLabel->clear();
+                }
+            } );
 
         connect( m_fileButton, &QPushButton::clicked, this, [this]()
         {
@@ -262,64 +393,105 @@ namespace MaastoPlugin
         m_valuesComboBox = new QComboBox( this );
         layout->addWidget( m_valuesComboBox );
 
-        // --- Luokat (checkbox-monivalinta) + toggle-napit ---
+        // --- Splitter: "Luokittele luokista" + "Näkyvät luokat" ---
+        QSplitter *listSplitter = new QSplitter( Qt::Vertical, this );
+        listSplitter->setSizePolicy( QSizePolicy::Expanding, QSizePolicy::Expanding );
+
+        // Yläpaneeli: "Luokittele luokista"
+        QWidget *topPane = new QWidget( listSplitter );
+        QVBoxLayout *topPaneLayout = new QVBoxLayout( topPane );
+        topPaneLayout->setContentsMargins( 0, 0, 0, 0 );
+        topPaneLayout->setSpacing( 2 );
         {
             QHBoxLayout *arvoHeader = new QHBoxLayout();
-            arvoHeader->addWidget( new QLabel( "Luokittele luokista:", this ) );
-            m_selectAllButton = new QPushButton( "Valitse kaikki", this );
+            arvoHeader->addWidget( new QLabel( "Luokittele luokista:", topPane ) );
+            m_selectAllButton = new QPushButton( "Valitse kaikki", topPane );
             m_selectAllButton->setCheckable( true );
             m_selectAllButton->setFixedHeight( 22 );
             arvoHeader->addWidget( m_selectAllButton );
-            m_showAllButton = new QPushButton( "Hide all", this );
+            m_showAllButton = new QPushButton( "Hide all", topPane );
             m_showAllButton->setCheckable( true );
             m_showAllButton->setChecked( true );
             m_showAllButton->setFixedHeight( 22 );
             arvoHeader->addWidget( m_showAllButton );
-            m_editClassesButton = new QPushButton( "Muokkaa", this );
+            m_editClassesButton = new QPushButton( "Muokkaa", topPane );
             m_editClassesButton->setFixedHeight( 22 );
             m_editClassesButton->setEnabled( false ); // aktivoituu kun .ptc ladattu
             arvoHeader->addWidget( m_editClassesButton );
-            layout->addLayout( arvoHeader );
+            topPaneLayout->addLayout( arvoHeader );
         }
-        m_listWidget = new QTreeWidget( this );
-        m_listWidget->setMinimumHeight( 150 );
+        m_listWidget = new QTreeWidget( topPane );
+        m_listWidget->setMinimumHeight( 60 );
         m_listWidget->setHeaderHidden( true );
         m_listWidget->setRootIsDecorated( false );
-        layout->addWidget( m_listWidget );
+        topPaneLayout->addWidget( m_listWidget );
+        listSplitter->addWidget( topPane );
+
+        // Alapaneeli: "Näkyvät luokat"
+        QWidget *botPane = new QWidget( listSplitter );
+        QVBoxLayout *botPaneLayout = new QVBoxLayout( botPane );
+        botPaneLayout->setContentsMargins( 0, 0, 0, 0 );
+        botPaneLayout->setSpacing( 2 );
+        {
+            QHBoxLayout *visHeader = new QHBoxLayout();
+            visHeader->addWidget( new QLabel( "Näkyvät luokat:", botPane ) );
+            m_selectAllVisButton = new QPushButton( "Valitse kaikki", botPane );
+            m_selectAllVisButton->setCheckable( true );
+            m_selectAllVisButton->setChecked( true );
+            m_selectAllVisButton->setFixedHeight( 22 );
+            visHeader->addWidget( m_selectAllVisButton );
+            botPaneLayout->addLayout( visHeader );
+        }
+        m_visibilityListWidget = new QTreeWidget( botPane );
+        m_visibilityListWidget->setMinimumHeight( 60 );
+        m_visibilityListWidget->setHeaderHidden( true );
+        m_visibilityListWidget->setRootIsDecorated( false );
+        botPaneLayout->addWidget( m_visibilityListWidget );
+        listSplitter->addWidget( botPane );
+
+        listSplitter->setSizes( { 200, 150 } );
+        layout->addWidget( listSplitter );
+
+        // --- Pick-info-label ---
+        m_pickInfoLabel = new QLabel( this );
+        m_pickInfoLabel->setAlignment( Qt::AlignLeft | Qt::AlignVCenter );
+        m_pickInfoLabel->setWordWrap( true );
+        m_pickInfoLabel->setStyleSheet( "QLabel { background: #1e1e1e; color: #d4d4d4;"
+                                        " padding: 4px; border-radius: 3px; }" );
+        m_pickInfoLabel->setVisible( false );
+        layout->addWidget( m_pickInfoLabel );
 
         // --- Luokittele luokkaan ---
         layout->addWidget( new QLabel( "Luokittele luokkaan:", this ) );
         m_targetClassComboBox = new QComboBox( this );
         layout->addWidget( m_targetClassComboBox );
 
+        // Tallenna valinta pysyvästi jäsenmuuttujaan aina kun se muuttuu
+        connect( m_targetClassComboBox,
+            QOverload<int>::of( &QComboBox::currentIndexChanged ),
+            [this]( int idx )
+            {
+                if ( idx >= 0 )
+                {
+                    const QVariant d = m_targetClassComboBox->itemData( idx );
+                    m_lastTargetCode = d.isValid() ? d.toInt() : idx;
+                }
+                // Päivitä korostukset — kohdeluokan pisteet suodatetaan pois
+                if ( !m_indexHitCount.empty() )
+                    refreshHighlights();
+            } );
+
         // --- Pisteiden väritys (RGB + scalar-kentät) ---
         layout->addWidget( new QLabel( "Pisteiden väritys:", this ) );
         m_colorComboBox = new QComboBox( this );
         layout->addWidget( m_colorComboBox );
-
-        // --- Näkyvät luokat -lista (visibility mask) ---
-        {
-            QHBoxLayout *visHeader = new QHBoxLayout();
-            visHeader->addWidget( new QLabel( "Näkyvät luokat:", this ) );
-            m_selectAllVisButton = new QPushButton( "Valitse kaikki", this );
-            m_selectAllVisButton->setCheckable( true );
-            m_selectAllVisButton->setChecked( true );   // oletuksena kaikki valittuna
-            m_selectAllVisButton->setFixedHeight( 22 );
-            visHeader->addWidget( m_selectAllVisButton );
-            layout->addLayout( visHeader );
-        }
-        m_visibilityListWidget = new QTreeWidget( this );
-        m_visibilityListWidget->setMinimumHeight( 120 );
-        m_visibilityListWidget->setHeaderHidden( true );
-        m_visibilityListWidget->setRootIsDecorated( false );
-        layout->addWidget( m_visibilityListWidget );
 
         // Päivitä arvolista ja kohdeluokka kun valuesComboBox muuttuu
         connect( m_valuesComboBox, &QComboBox::currentTextChanged,
             [this]( const QString &fieldName )
             {
                 populateValueList( fieldName );
-                populateTargetClassComboBox();
+                populateTargetClassComboBox( m_lastTargetCode );
             } );
 
         // Aseta värjäys + päivitä näkyvyyslista kun colorComboBox muuttuu
@@ -357,7 +529,15 @@ namespace MaastoPlugin
                 const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
                 m_listWidget->blockSignals( true );
                 for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
-                    m_listWidget->topLevelItem( i )->setCheckState( 0, state );
+                {
+                    QTreeWidgetItem *it = m_listWidget->topLevelItem( i );
+                    it->setCheckState( 0, state );
+                    const int code = it->text( 0 ).toInt();
+                    if ( checked )
+                        m_checkedClassCodes.insert( code );
+                    else
+                        m_checkedClassCodes.remove( code );
+                }
                 m_listWidget->blockSignals( false );
                 refreshHighlights();
             } );
@@ -380,7 +560,13 @@ namespace MaastoPlugin
                 }
                 else if ( column == 0 )
                 {
-                    // Value-sarakkeen muutos
+                    // Value-sarakkeen muutos — päivitä pysyvä valintamuisti
+                    const int code = item->text( 0 ).toInt();
+                    if ( item->checkState( 0 ) == Qt::Checked )
+                        m_checkedClassCodes.insert( code );
+                    else
+                        m_checkedClassCodes.remove( code );
+
                     m_selectAllButton->blockSignals( true );
                     m_selectAllButton->setChecked( false );
                     m_selectAllButton->setText( "Valitse kaikki" );
@@ -448,10 +634,22 @@ namespace MaastoPlugin
             polygonCol->addLayout( lineRow );
         }
 
-        m_showOnlyButton = new QPushButton( "Näytä vain valinta", this );
-        m_showOnlyButton->setCheckable( true );
-        m_showOnlyButton->setEnabled( false );   // disabloitu kunnes on valinta
-        polygonCol->addWidget( m_showOnlyButton );
+        {
+            QHBoxLayout *showLockRow = new QHBoxLayout();
+            showLockRow->setContentsMargins( 0, 0, 0, 0 );
+
+            m_showOnlyButton = new QPushButton( "Näytä vain valinta", this );
+            m_showOnlyButton->setCheckable( true );
+            m_showOnlyButton->setEnabled( false );   // disabloitu kunnes on valinta
+            showLockRow->addWidget( m_showOnlyButton );
+
+            m_lockViewButton = new QPushButton( "Lukitse näkymä", this );
+            m_lockViewButton->setCheckable( true );
+            m_lockViewButton->setEnabled( false );   // disabloitu kunnes showOnly päällä
+            showLockRow->addWidget( m_lockViewButton );
+
+            polygonCol->addLayout( showLockRow );
+        }
 
         {
             QHBoxLayout *selRow = new QHBoxLayout();
@@ -680,9 +878,76 @@ namespace MaastoPlugin
         {
             m_showOnlyMode = checked;
             if ( checked )
+            {
+                m_lockViewButton->setEnabled( true );
                 enableShowOnlyMode();
+            }
             else
+            {
+                // Pura lukitus ensin
+                m_lockViewMode = false;
+                m_lockViewButton->blockSignals( true );
+                m_lockViewButton->setChecked( false );
+                m_lockViewButton->blockSignals( false );
+                m_lockViewButton->setEnabled( false );
                 disableShowOnlyMode();
+            }
+        } );
+
+        // "Lukitse näkymä" -toggle
+        connect( m_lockViewButton, &QPushButton::toggled, this, [this]( bool checked )
+        {
+            m_lockViewMode = checked;
+            if ( checked )
+            {
+                // Tallennetaan snapshot lukitushetkellä
+                m_preLockedHitCount   = m_indexHitCount;
+                m_preLockedPrismCount = m_meshObjects.size();
+                m_lockedIndices = std::unordered_set<unsigned>(
+                    m_selectionIndices.begin(), m_selectionIndices.end() );
+                // ShowOnly-nappi ei käytettävissä lukituksen aikana
+                m_showOnlyButton->setEnabled( false );
+
+                // Rakennetaan highlight suoraan kaikista lukitun joukon pisteistä
+                // (ohitetaan minHits/SF-suodatus — kaikki lukitut pisteet korostetaan)
+                if ( m_showOnlyMode )
+                    disableShowOnlyMode();
+                removeHighlightObjects();
+                buildHighlightFromIndices( std::vector<unsigned>(
+                    m_lockedIndices.begin(), m_lockedIndices.end() ) );
+
+                // Rakennetaan selectionOnlyCloud m_lockedIndices:stä (kaikki lukitut pisteet)
+                // ja highlight jää näkyviin päälle
+                enableShowOnlyMode();
+
+                m_cloud->prepareDisplayForRefresh_recursive();
+                m_appInterface->refreshAll();
+            }
+            else
+            {
+                // Poistetaan lukituksen aikana lisätyt prismat DB:stä
+                for ( size_t i = m_preLockedPrismCount; i < m_meshObjects.size(); ++i )
+                    m_appInterface->removeFromDB( m_meshObjects[i], true );
+                if ( m_meshObjects.size() > m_preLockedPrismCount )
+                {
+                    m_meshObjects.erase(
+                        m_meshObjects.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
+                        m_meshObjects.end() );
+                    m_prismData.erase(
+                        m_prismData.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
+                        m_prismData.end() );
+                }
+                // Palautetaan alkuperäinen hit-count
+                m_indexHitCount = m_preLockedHitCount;
+                // Nollataan lukitustila
+                m_lockedIndices.clear();
+                m_preLockedHitCount.clear();
+                m_preLockedPrismCount = 0;
+                // Palautetaan showOnly-nappi käyttöön
+                m_showOnlyButton->setEnabled( true );
+                // Päivitetään näkymä alkuperäisillä prismoilla
+                refreshHighlights();
+            }
         } );
 
         // Korosta valinta: päällä/pois highlight-pilven näyttäminen
@@ -765,6 +1030,13 @@ namespace MaastoPlugin
                     m_appInterface->addToDB( mesh );
                     m_meshObjects.push_back( mesh );
 
+                    // Tallenna prisman data uudelleenlaskentaa varten
+                    // (insideIndices täytetään alla lasketuista indekseistä)
+                    m_prismData.push_back( { m_polygonDrawer->getClosedVertices(),
+                                             m_nearDistSpinBox->value(),
+                                             m_farDistSpinBox->value(),
+                                             {} } );
+
                     // Kerää prisman sisällä olevien pisteiden indeksit
                     if ( m_cloud != nullptr )
                     {
@@ -780,6 +1052,8 @@ namespace MaastoPlugin
                         );
                         if ( !indices.empty() )
                         {
+                            // Tallenna piirtohetken indeksit rakenteeseen
+                            m_prismData.back().insideIndices = indices;
                             for ( unsigned idx : indices )
                                 m_indexHitCount[idx]++;
                         }
@@ -805,6 +1079,14 @@ namespace MaastoPlugin
             // Aloita uusi piirto automaattisesti
             m_polygonDrawer->startDrawing();
         } );
+
+        // Kun dialogi suljetaan → poista pick-kuuntelija automaattisesti
+        connect( this, &QDialog::finished, this, [this]()
+        {
+            if ( m_pickingHub )
+                m_pickingHub->removeListener( this );
+            removePickMarker();
+        } );
     }
 
     void MaastoDialog::updateCloud( ccPointCloud *cloud )
@@ -815,8 +1097,26 @@ namespace MaastoPlugin
 
         // Palauta vanha pilvi alkutilaan ennen vaihtoa
         // Jos "Näytä vain valinta" on päällä, pura tila ensin (palauttaa m_cloud näkyviin)
+        // Poikkeus: jos sama pilvi tulee sisään (esim. luokittelun jälkeen updateUI()-kutsu),
+        // ei pureta showOnly/lukitustilaa — pilvi ei vaihdu, tila säilyy.
         if ( m_showOnlyMode )
         {
+            if ( cloud == m_cloud )
+            {
+                m_updatingCloud = false;
+                return;
+            }
+            m_lockViewMode = false;
+            m_lockedIndices.clear();
+            m_preLockedHitCount.clear();
+            m_preLockedPrismCount = 0;
+            if ( m_lockViewButton )
+            {
+                m_lockViewButton->blockSignals( true );
+                m_lockViewButton->setChecked( false );
+                m_lockViewButton->blockSignals( false );
+                m_lockViewButton->setEnabled( false );
+            }
             disableShowOnlyMode();
             m_showOnlyMode = false;
             if ( m_showOnlyButton )
@@ -841,9 +1141,8 @@ namespace MaastoPlugin
             m_ptcFilePath = "";
         }
 
-        QString keepValues      = m_valuesComboBox->currentText();
-        QString keepTargetClass = m_targetClassComboBox->currentText();
-        QString keepColor       = m_colorComboBox->currentText();
+        QString keepValues  = m_valuesComboBox->currentText();
+        QString keepColor   = m_colorComboBox->currentText();
 
         m_cloud = cloud;
 
@@ -852,7 +1151,7 @@ namespace MaastoPlugin
             tryAutoLoadPtcFile();
 
         populateComboBox( m_valuesComboBox, keepValues );
-        populateTargetClassComboBox( keepTargetClass );
+        populateTargetClassComboBox( m_lastTargetCode );
         populateColorComboBox( keepColor );
 
         m_updatingCloud = false;
@@ -892,7 +1191,7 @@ namespace MaastoPlugin
         if ( comboBox == m_valuesComboBox )
         {
             populateValueList( comboBox->currentText() );
-            populateTargetClassComboBox();
+            populateTargetClassComboBox( m_lastTargetCode );
         }
 
         if ( comboBox == m_colorComboBox )
@@ -922,11 +1221,17 @@ namespace MaastoPlugin
         // Laske pisteiden määrät ennen listan täyttöä
         computeClassCounts( fieldName );
 
-        // Tallenna nykyiset valinnat (Value col 0) ennen tyhjennystä
-        QSet<QString> checkedValues;
+        // Päivitä pysyvä valintamuisti listasta ennen tyhjennystä
+        // (käyttäjä on saattanut muuttaa valintoja suoraan listasta ilman signaaleja)
         for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
-            if ( m_listWidget->topLevelItem( i )->checkState( 0 ) == Qt::Checked )
-                checkedValues.insert( m_listWidget->topLevelItem( i )->text( 0 ) );
+        {
+            const QTreeWidgetItem *it = m_listWidget->topLevelItem( i );
+            const int code = it->text( 0 ).toInt();
+            if ( it->checkState( 0 ) == Qt::Checked )
+                m_checkedClassCodes.insert( code );
+            else
+                m_checkedClassCodes.remove( code );
+        }
 
         // Tallenna nykyiset Show-tilat (col 1) ennen tyhjennystä
         for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
@@ -1034,7 +1339,7 @@ namespace MaastoPlugin
 
             // Value-sarake (col 0): checkbox luokittelua varten
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
-            item->setCheckState( 0, checkedValues.contains( val )
+            item->setCheckState( 0, m_checkedClassCodes.contains( val.toInt() )
                                     ? Qt::Checked : Qt::Unchecked );
             item->setText( 0, val );
 
@@ -1116,7 +1421,7 @@ namespace MaastoPlugin
         }
     }
 
-    void MaastoDialog::populateTargetClassComboBox( const QString &keepValue )
+    void MaastoDialog::populateTargetClassComboBox( int keepCode )
     {
         m_targetClassComboBox->blockSignals( true );
         m_targetClassComboBox->clear();
@@ -1167,10 +1472,16 @@ namespace MaastoPlugin
         if ( values.isEmpty() )
             return;
 
-        // Säilytä edellinen valinta jos mahdollista
-        int keepIdx = isClassif
-                      ? m_targetClassComboBox->findData( keepValue.toInt() )
-                      : m_targetClassComboBox->findText( keepValue );
+        // Säilytä edellinen valinta luokkakoodin perusteella
+        int keepIdx = -1;
+        if ( keepCode >= 0 )
+        {
+            keepIdx = isClassif
+                      ? m_targetClassComboBox->findData( keepCode )
+                      : m_targetClassComboBox->findText( QString::number( keepCode ) );
+        }
+        // blockSignals on jo false — setCurrentIndex triggeröi currentIndexChanged
+        // joka päivittää m_lastTargetCode oikeaan arvoon
         m_targetClassComboBox->setCurrentIndex( keepIdx >= 0 ? keepIdx : 0 );
     }
 
@@ -1523,16 +1834,42 @@ namespace MaastoPlugin
             }
         }
 
+        if ( count == 0 )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: luokittelumuodon sisällä ei ole yhtään pistettä valittuna. "
+                "Muuta Polygonien vähimmäismäärää tai lähtöluokkia.",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
         sf->computeMinAndMax();
         m_cloud->prepareDisplayForRefresh();
 
-        // Poista 3D-kappaleet ja highlight-pilvet DB:stä
-        for ( ccHObject *obj : m_meshObjects )
-            m_appInterface->removeFromDB( obj, true );
-        m_meshObjects.clear();
-
+        // Prismat jäävät DB:hen — poista vain highlight-pilvet
         removeHighlightObjects();
+
+        // Laske pisteindeksit uudelleen kaikista prismoista
+        // Käytetään piirtohetkellä tallennettuja indeksejä — ei kamera-riippuvuutta
         m_indexHitCount.clear();
+        for ( const PrismData &pd : m_prismData )
+        {
+            for ( unsigned idx : pd.insideIndices )
+                m_indexHitCount[idx]++;
+        }
+
+        // Lukitustilassa päivitetään myös snapshot — jotta lukituksen vapautus
+        // palauttaa luokittelun jälkeisen tilan eikä vanhaa
+        if ( m_lockViewMode )
+            m_preLockedHitCount = m_indexHitCount;
+
+        // Päivitä vertex-RGB ennen highlight-päivitystä — tärkeää lukitustilassa
+        // koska enableShowOnlyMode() kopioi värit pääpilveltä selectionOnlyCloud:iin
+        if ( m_ptcColorsApplied )
+            applyPtcColors();
+
+        // Päivitä korostukset uudelleenlaskettujen indeksien perusteella
+        refreshHighlights();
 
         m_appInterface->dispToConsole(
             QString( "MaastoPlugin: luokiteltu %1 pistettä → %2" )
@@ -1552,9 +1889,42 @@ namespace MaastoPlugin
 
     void MaastoDialog::clearSelection()
     {
+        // Lukitustilassa: poistetaan vain lukituksen aikana lisätyt prismat.
+        // Alkuperäiset prismat, lukitustila ja showOnly säilyvät.
+        if ( m_lockViewMode )
+        {
+            for ( size_t i = m_preLockedPrismCount; i < m_meshObjects.size(); ++i )
+                m_appInterface->removeFromDB( m_meshObjects[i], true );
+            if ( m_meshObjects.size() > m_preLockedPrismCount )
+            {
+                m_meshObjects.erase(
+                    m_meshObjects.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
+                    m_meshObjects.end() );
+                m_prismData.erase(
+                    m_prismData.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
+                    m_prismData.end() );
+            }
+            // Palautetaan alkuperäinen hit-count (lukituksen aikaiset prismat pois)
+            m_indexHitCount = m_preLockedHitCount;
+            // Päivitä highlight lukituilla pisteillä
+            refreshHighlights();
+            return;
+        }
+
         // 1. Jos "Näytä vain valinta" on päällä, pura tila ensin
         if ( m_showOnlyMode )
         {
+            m_lockViewMode = false;
+            m_lockedIndices.clear();
+            m_preLockedHitCount.clear();
+            m_preLockedPrismCount = 0;
+            if ( m_lockViewButton )
+            {
+                m_lockViewButton->blockSignals( true );
+                m_lockViewButton->setChecked( false );
+                m_lockViewButton->blockSignals( false );
+                m_lockViewButton->setEnabled( false );
+            }
             disableShowOnlyMode();
             m_showOnlyMode = false;
             if ( m_showOnlyButton )
@@ -1570,6 +1940,7 @@ namespace MaastoPlugin
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
         m_meshObjects.clear();
+        m_prismData.clear();
 
         // 3. Poista highlight-pistepilvet DB:stä
         removeHighlightObjects();
@@ -1628,25 +1999,50 @@ namespace MaastoPlugin
 
     void MaastoDialog::enableShowOnlyMode()
     {
-        if ( !m_cloud || m_selectionIndices.empty() )
+        if ( !m_cloud )
             return;
+
+        // Lukitustilassa: selectionOnlyCloud rakennetaan m_lockedIndices:stä (kaikki lukitun joukon
+        // pisteet näkyvissä normaalivärillä). Highlight-pilvet jätetään näkyviin (korostusväri päälle).
+        // Normaalitilassa: selectionOnlyCloud rakennetaan m_selectionIndices:stä, highlight piilotetaan.
+
+        const std::vector<unsigned> *srcIndices = nullptr;
+        std::vector<unsigned> lockedVec;
+
+        if ( m_lockViewMode )
+        {
+            if ( m_lockedIndices.empty() )
+                return;
+            lockedVec.assign( m_lockedIndices.begin(), m_lockedIndices.end() );
+            srcIndices = &lockedVec;
+        }
+        else
+        {
+            if ( m_selectionIndices.empty() )
+                return;
+            srcIndices = &m_selectionIndices;
+        }
 
         // 1. Piilota pääpilvi
         m_cloud->setVisible( false );
         m_cloud->prepareDisplayForRefresh();
 
-        // 2. Piilota highlight-pilvet (keltainen visualisointi)
-        for ( ccHObject *obj : m_highlightObjects )
+        // 2. Highlight-pilvet: piilotetaan vain normaalitilassa
+        //    Lukitustilassa highlight jää näkyviin (korostusvärillä päällä selectionOnlyCloud:n päällä)
+        if ( !m_lockViewMode )
         {
-            obj->setVisible( false );
-            obj->prepareDisplayForRefresh();
+            for ( ccHObject *obj : m_highlightObjects )
+            {
+                obj->setVisible( false );
+                obj->prepareDisplayForRefresh();
+            }
         }
 
         // 3. Poista vanha väliaikainen pilvi jos on
         removeSelectionOnlyCloud();
 
-        // 4. Rakenna uusi "vain valinta" -pilvi pääpilven visualisointia käyttäen
-        const unsigned count = static_cast<unsigned>( m_selectionIndices.size() );
+        // 4. Rakenna uusi "vain valinta" -pilvi srcIndices:stä
+        const unsigned count = static_cast<unsigned>( srcIndices->size() );
         m_selectionOnlyCloud = new ccPointCloud( "SelectionOnly" );
         if ( !m_selectionOnlyCloud->reserve( count ) )
         {
@@ -1655,10 +2051,10 @@ namespace MaastoPlugin
             return;
         }
 
-        for ( unsigned idx : m_selectionIndices )
+        for ( unsigned idx : *srcIndices )
             m_selectionOnlyCloud->addPoint( *m_cloud->getPoint( idx ) );
 
-        // 5. Kopioi visualisointi pääpilveltä
+        // 5. Kopioi visualisointi pääpilveltä (käyttäen srcIndices:iä)
         if ( m_cloud->sfShown() )
         {
             // SF-tila: kopioi scalar field arvot ja värikaava
@@ -1670,7 +2066,7 @@ namespace MaastoPlugin
             {
                 ccScalarField *dstSf = new ccScalarField( srcSf->getName() );
                 dstSf->reserve( count );
-                for ( unsigned idx : m_selectionIndices )
+                for ( unsigned idx : *srcIndices )
                     dstSf->addElement( srcSf->getValue( idx ) );
                 dstSf->computeMinAndMax();
                 dstSf->setColorScale( srcSf->getColorScale() );
@@ -1687,7 +2083,7 @@ namespace MaastoPlugin
             // RGB-tila: kopioi per-pisteen RGB pääpilveltä
             if ( m_cloud->hasColors() && m_selectionOnlyCloud->reserveTheRGBTable() )
             {
-                for ( unsigned idx : m_selectionIndices )
+                for ( unsigned idx : *srcIndices )
                     m_selectionOnlyCloud->addColor( m_cloud->getPointColor( idx ) );
                 m_selectionOnlyCloud->showColors( true );
                 m_selectionOnlyCloud->showSF( false );
@@ -1771,7 +2167,16 @@ namespace MaastoPlugin
         // Näytetään vain pisteet jotka ovat vähintään N prisman sisällä
         const int minHits = m_minPolygonCountSpinBox ? m_minPolygonCountSpinBox->value() : 1;
 
+        // Kohdeluokan pisteitä ei korosteta — ne tulisivat luokitelluiksi
+        const QVariant targetData = m_targetClassComboBox
+                                    ? m_targetClassComboBox->currentData()
+                                    : QVariant();
+        const bool hasTarget = targetData.isValid();
+        const float targetVal = hasTarget ? static_cast<float>( targetData.toFloat() ) : 0.0f;
+
         // Kerää pisteet joiden hitCount ≥ minHits ja arvo on valituissa arvoissa
+        // (kohdeluokan pisteet jätetään pois korostuksesta)
+        // Lukituksen aikana hyväksytään vain lukitushetken snapshot-pisteet
         std::vector<unsigned> matchIndices;
         for ( const auto& kv : m_indexHitCount )
         {
@@ -1779,8 +2184,10 @@ namespace MaastoPlugin
             const int      hits  = kv.second;
             if ( hits < minHits || idx >= m_cloud->size() )
                 continue;
+            if ( m_lockViewMode && m_lockedIndices.count( idx ) == 0 )
+                continue;
             const float val = static_cast<float>( sf->getValue( idx ) );
-            if ( selectedValues.contains( val ) )
+            if ( selectedValues.contains( val ) && ( !hasTarget || val != targetVal ) )
                 matchIndices.push_back( idx );
         }
 
@@ -1845,21 +2252,106 @@ namespace MaastoPlugin
     }
 
     // ----------------------------------------------------------------
+    // buildHighlightFromIndices
+    // Rakentaa highlight-pilven suoraan annetuista indekseistä korostusvärillä.
+    // Käytetään lukituksen aktivoinnissa jolloin kaikki lukitun joukon pisteet
+    // korostetaan ilman minHits/SF-suodatusta.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::buildHighlightFromIndices( const std::vector<unsigned>& indices )
+    {
+        if ( !m_cloud || indices.empty() )
+            return;
+
+        static int s_lockedCounter = 0;
+        ++s_lockedCounter;
+
+        ccPointCloud *highlighted = new ccPointCloud(
+            QString( "Highlighted_Locked_%1" ).arg( s_lockedCounter ) );
+
+        if ( !highlighted->reserve( static_cast<unsigned>( indices.size() ) ) )
+        {
+            delete highlighted;
+            return;
+        }
+
+        for ( unsigned idx : indices )
+            highlighted->addPoint( *m_cloud->getPoint( idx ) );
+
+        // Korostusväri
+        if ( highlighted->reserveTheRGBTable() )
+        {
+            const ccColor::Rgba col(
+                static_cast<ColorCompType>( m_highlightColor.red() ),
+                static_cast<ColorCompType>( m_highlightColor.green() ),
+                static_cast<ColorCompType>( m_highlightColor.blue() ),
+                ccColor::MAX );
+            for ( std::size_t i = 0; i < indices.size(); ++i )
+                highlighted->addColor( col );
+            highlighted->showColors( true );
+        }
+
+        highlighted->setPointSize( static_cast<unsigned>( m_highlightPointSize ) );
+
+        m_cloud->addChild( highlighted );
+        m_appInterface->addToDB( highlighted, false, false, false, false );
+        m_highlightObjects.push_back( highlighted );
+
+        // Päivitä m_selectionIndices jotta enableShowOnlyMode tietää mitkä pisteet ovat valittuja
+        m_selectionIndices = indices;
+    }
+
+    // ----------------------------------------------------------------
     // refreshHighlights
     // ----------------------------------------------------------------
 
     void MaastoDialog::refreshHighlights()
     {
-        // Jos "Näytä vain valinta" on päällä, puretaan tila ensin puhtaasti
+        // Puretaan showOnly-tila ensin jotta voidaan rakentaa uudet pilvet
+        // Lukitustilassa EI kutsuta disableShowOnlyMode() koska se palauttaisi
+        // pääpilven näkyviin — poistetaan vain selectionOnlyCloud ja highlight suoraan
         if ( m_showOnlyMode )
-            disableShowOnlyMode();
-
-        removeHighlightObjects();
+        {
+            if ( m_lockViewMode )
+            {
+                removeSelectionOnlyCloud();
+                removeHighlightObjects();
+            }
+            else
+            {
+                disableShowOnlyMode();
+                removeHighlightObjects();
+            }
+        }
+        else
+        {
+            removeHighlightObjects();
+        }
 
         if ( !m_cloud || m_indexHitCount.empty() )
         {
-            // Ei valintaa — disabloi nappi ja nollaa tila
+            if ( m_lockViewMode )
+            {
+                // Lukitustilassa: ei prismavalintaa, mutta säilytetään lukittu näkymä
+                // selectionOnlyCloud rakennetaan m_lockedIndices:stä (highlight on tyhjä)
+                enableShowOnlyMode();
+                m_cloud->prepareDisplayForRefresh_recursive();
+                m_appInterface->refreshAll();
+                return;
+            }
+            // Ei valintaa — disabloi napit ja nollaa tila
             m_selectionIndices.clear();
+            m_lockViewMode = false;
+            m_lockedIndices.clear();
+            m_preLockedHitCount.clear();
+            m_preLockedPrismCount = 0;
+            if ( m_lockViewButton )
+            {
+                m_lockViewButton->blockSignals( true );
+                m_lockViewButton->setChecked( false );
+                m_lockViewButton->blockSignals( false );
+                m_lockViewButton->setEnabled( false );
+            }
             if ( m_showOnlyButton )
             {
                 m_showOnlyButton->blockSignals( true );
@@ -1898,25 +2390,47 @@ namespace MaastoPlugin
             );
             m_highlightObjects.push_back( highlighted );
 
-            // Aktivoi nappi kun valittuja pisteitä on
+            // Aktivoi nappi kun valittuja pisteitä on — ei lukituksen aikana
             if ( m_showOnlyButton )
-                m_showOnlyButton->setEnabled( true );
+                m_showOnlyButton->setEnabled( !m_lockViewMode );
         }
         else
         {
-            // createFilteredHighlight palautti nullptr (tyhjä tulos)
-            m_selectionIndices.clear();
-            if ( m_showOnlyButton )
+            if ( m_lockViewMode )
             {
-                m_showOnlyButton->blockSignals( true );
-                m_showOnlyButton->setChecked( false );
-                m_showOnlyButton->blockSignals( false );
-                m_showOnlyButton->setEnabled( false );
+                // Lukitustilassa: suodatus ei tuottanut pisteitä (esim. minHits liian suuri)
+                // Säilytetään lukittu näkymä — selectionOnlyCloud rakennetaan m_lockedIndices:stä
+                // highlight on tyhjä (ei korostusta)
+                enableShowOnlyMode();
             }
-            m_showOnlyMode = false;
+            else
+            {
+                // createFilteredHighlight palautti nullptr — nollaa kaikki
+                m_selectionIndices.clear();
+                m_lockViewMode = false;
+                m_lockedIndices.clear();
+                m_preLockedHitCount.clear();
+                m_preLockedPrismCount = 0;
+                if ( m_lockViewButton )
+                {
+                    m_lockViewButton->blockSignals( true );
+                    m_lockViewButton->setChecked( false );
+                    m_lockViewButton->blockSignals( false );
+                    m_lockViewButton->setEnabled( false );
+                }
+                if ( m_showOnlyButton )
+                {
+                    m_showOnlyButton->blockSignals( true );
+                    m_showOnlyButton->setChecked( false );
+                    m_showOnlyButton->blockSignals( false );
+                    m_showOnlyButton->setEnabled( false );
+                }
+                m_showOnlyMode = false;
+            }
         }
 
-        // Jos "Näytä vain valinta" oli päällä, aktivoi se uudelleen päivitetyillä pisteillä
+        // Jos "Näytä vain valinta" on päällä, aktivoi uudelleen päivitetyillä pisteillä
+        // (lukituksen aikana m_selectionIndices on jo suodatettu lukituille pisteille)
         if ( m_showOnlyMode )
             enableShowOnlyMode();
 

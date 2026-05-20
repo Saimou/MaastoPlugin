@@ -14,16 +14,19 @@
 #include <QVector>
 #include <vector>
 #include <map>
+#include <unordered_set>
 
 #include "ClassDefinition.h"
 #include "ClassEditorDialog.h"
 #include "CCGeom.h"
 #include "ccColorTypes.h"
+#include "ccPickingListener.h"
+#include "PolygonDrawer.h"
 
 class ccMainAppInterface;
+class ccPickingHub;
 class ccPointCloud;
 class ccHObject;
-class PolygonDrawer;
 
 namespace MaastoPlugin
 {
@@ -32,7 +35,7 @@ namespace MaastoPlugin
 
     class SettingsDialog;
 
-    class MaastoDialog : public QDialog
+    class MaastoDialog : public QDialog, public ccPickingListener
     {
         Q_OBJECT
 
@@ -47,7 +50,7 @@ namespace MaastoPlugin
         void populateComboBox( QComboBox *comboBox, const QString &keepField = QString() );
         void populateColorComboBox( const QString &keepField = QString() );
         void populateValueList( const QString &fieldName );
-        void populateTargetClassComboBox( const QString &keepValue = QString() );
+        void populateTargetClassComboBox( int keepCode = -1 );
         void populateVisibilityList( const QString &fieldName );
         void applyColorField( const QString &fieldName );
         void applyVisibilityFilter();
@@ -57,6 +60,7 @@ namespace MaastoPlugin
 
         QSet<float> getCheckedValues() const;
         ccPointCloud* createFilteredHighlight( const QSet<float>& selectedValues );
+        void buildHighlightFromIndices( const std::vector<unsigned>& indices );
         void removeHighlightObjects();
         void refreshHighlights();
 
@@ -108,6 +112,12 @@ namespace MaastoPlugin
         void removeClassSizeSubCloud( int classCode );
         void clearAllSizeSubClouds();
 
+        // ccPickingListener — kutsutaan kun käyttäjä klikkaa 3D-näkymässä
+        void onItemPicked( const ccPickingListener::PickedItem &pi ) override;
+
+        // Poistaa aiemman pick-korostuspisteen
+        void removePickMarker();
+
         // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
         // dlg: jos != nullptr, päivitetään myös dialogin widgetit
         void loadSettingsFromFile( const QString &path,
@@ -146,6 +156,10 @@ namespace MaastoPlugin
 
         QMap<QString, bool> m_showStates;   // arvo → Show-tila (true=näkyvä)
 
+        // Pysyvät valinnat: säilyvät listan uudelleentäytön yli
+        QSet<int>           m_checkedClassCodes;  // Luokittele luokista -lista
+        int                 m_lastTargetCode;     // Luokittele luokkaan -combo (luokkakoodi, -1 = ei asetettu)
+
         // Highlight-asetukset
         int                 m_highlightPointSize;
         QColor              m_highlightColor;
@@ -162,6 +176,7 @@ namespace MaastoPlugin
         QPushButton        *m_highlightButton;
         QPushButton        *m_clearSelectionButton;
         QPushButton        *m_showOnlyButton;
+        QPushButton        *m_lockViewButton;
         QPushButton        *m_fileButton;
         QSpinBox           *m_minPolygonCountSpinBox;
 
@@ -188,14 +203,36 @@ namespace MaastoPlugin
         // Luokkakohtaiset sub-pilvet (luokkakoodi → väliaikainen ccPointCloud*)
         QMap<int, ccPointCloud*>   m_sizeSubClouds;
 
+        // Prismojen tallennusrakenne uudelleenlaskentaa varten
+        struct PrismData
+        {
+            std::vector<PolygonDrawer::Point2D> vertices;
+            double nearDist;
+            double farDist;
+            std::vector<unsigned> insideIndices; // piirtohetken oikeat pisteindeksit
+        };
+
         std::map<unsigned, int>   m_indexHitCount;
         std::vector<ccHObject*>   m_meshObjects;
+        std::vector<PrismData>    m_prismData;
         std::vector<ccHObject*>   m_highlightObjects;
 
         // "Näytä vain valinta" -tila
-        bool                      m_showOnlyMode;       // onko tila päällä
-        ccPointCloud             *m_selectionOnlyCloud; // väliaikainen pilvi "vain valinta" -tilaan
-        std::vector<unsigned>     m_selectionIndices;   // valittujen pisteiden indeksit m_cloud:ssa
+        bool                          m_showOnlyMode;           // onko tila päällä
+        bool                          m_lockViewMode;           // onko näkymä lukittu
+        ccPointCloud                 *m_selectionOnlyCloud;     // väliaikainen pilvi "vain valinta" -tilaan
+        std::vector<unsigned>         m_selectionIndices;       // valittujen pisteiden indeksit m_cloud:ssa
+
+        // "Lukitse näkymä" -tila
+        std::unordered_set<unsigned>  m_lockedIndices;          // snapshot lukitushetkellä
+        std::map<unsigned, int>       m_preLockedHitCount;      // m_indexHitCount ennen lukitusta
+        size_t                        m_preLockedPrismCount;    // prismojen määrä ennen lukitusta
+
+        // Point picking
+        ccPickingHub       *m_pickingHub;
+        QPushButton        *m_pickPointButton;
+        QLabel             *m_pickInfoLabel;
+        ccHObject          *m_pickMarker;            // väliaikainen korostuspiste
 
         // Viiva-työkalu
         QPushButton        *m_drawLineButton;        // "Piirrä viiva" checkable toggle
