@@ -1010,6 +1010,24 @@ namespace MaastoPlugin
             m_listWidget->setHeaderHidden( true );
         }
 
+        // Lisää tuntemattomat luokkakoodit m_classDefinitions:iin tmp-nimellä
+        // jotta ClassEditorDialog näkee ne ja käyttäjä voi muokata niitä.
+        if ( isClassif )
+        {
+            for ( const QString &val : values )
+            {
+                const int code = val.toInt();
+                if ( !m_classDefinitions.contains( code ) )
+                {
+                    ClassDefinition tmpDef;
+                    tmpDef.value = code;
+                    tmpDef.name  = QString( "tmp_%1" ).arg( code );
+                    tmpDef.color = QColor( 128, 128, 128 );
+                    m_classDefinitions.insert( code, tmpDef );
+                }
+            }
+        }
+
         for ( const QString &val : values )
         {
             QTreeWidgetItem *item = new QTreeWidgetItem( m_listWidget );
@@ -1030,22 +1048,15 @@ namespace MaastoPlugin
 
             const int intVal = val.toInt();
 
-            if ( isClassif )
+            if ( isClassif && m_classDefinitions.contains( intVal ) )
             {
-                if ( m_classDefinitions.contains( intVal ) )
+                const ClassDefinition &def = m_classDefinitions[intVal];
+                item->setText( 2, def.name );
+                if ( def.color.isValid() )
                 {
-                    const ClassDefinition &def = m_classDefinitions[intVal];
-                    item->setText( 2, def.name );
-                    if ( def.color.isValid() )
-                    {
-                        QPixmap px( 20, 20 );
-                        px.fill( def.color );
-                        item->setIcon( 3, QIcon( px ) );
-                    }
-                }
-                else
-                {
-                    item->setText( 2, QString( "tmp_%1" ).arg( intVal ) );
+                    QPixmap px( 20, 20 );
+                    px.fill( def.color );
+                    item->setIcon( 3, QIcon( px ) );
                 }
             }
 
