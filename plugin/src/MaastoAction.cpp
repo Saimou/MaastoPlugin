@@ -3020,6 +3020,9 @@ namespace MaastoPlugin
         // Päivitä Luokat-lista
         populateValueList( m_valuesComboBox->currentText() );
 
+        // Päivitä Luokittele luokkaan -combo nimillä
+        populateTargetClassComboBox( m_lastTargetCode );
+
         // Päivitä värit jos Pisteiden väritys on Classification
         const QString colorField = m_colorComboBox->currentText();
         if ( colorField.compare( "Classification", Qt::CaseInsensitive ) == 0 )
