@@ -163,6 +163,10 @@ void PolygonDrawer::onLeftClick( int x, int y )
     if ( !m_drawing || !m_glWindow || !m_vertices )
         return;
 
+    // Hylkää klikkaukset 3D-ikkunan ulkopuolelta (esim. mouse grab -tilan aikana)
+    if ( x < 0 || y < 0 || x >= m_glWindow->glWidth() || y >= m_glWindow->glHeight() )
+        return;
+
     // Muunna pikselikoordinaateista 2D GL-koordinaatteihin (origo ikkunan keskellä)
     QPointF pos = m_glWindow->toCenteredGLCoordinates( x, y );
     CCVector3 P( static_cast<PointCoordinateType>( pos.x() ),
