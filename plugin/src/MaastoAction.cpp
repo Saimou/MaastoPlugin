@@ -1076,8 +1076,11 @@ namespace MaastoPlugin
                 }
             }
 
-            // Aloita uusi piirto automaattisesti
-            m_polygonDrawer->startDrawing();
+            // Sammuta polygon-nappi — käyttäjä painaa uudelleen aloittaakseen uuden
+            m_polygonDrawer->stopDrawing();
+            m_polygonButton->blockSignals( true );
+            m_polygonButton->setChecked( false );
+            m_polygonButton->blockSignals( false );
         } );
 
         // Kun dialogi suljetaan → poista pick-kuuntelija automaattisesti
@@ -3307,8 +3310,11 @@ namespace MaastoPlugin
                     // Poista väliaikaiset highlight-dotit (mesh jää näkyviin)
                     removeLineHighlights();
 
-                    // Aloita uusi viiva automaattisesti
-                    m_linePickState = 1;
+                    // Sammuta viiva-nappi — käyttäjä painaa uudelleen aloittaakseen uuden
+                    stopLinePicking();
+                    m_drawLineButton->blockSignals( true );
+                    m_drawLineButton->setChecked( false );
+                    m_drawLineButton->blockSignals( false );
                 }
             },
             Qt::UniqueConnection
