@@ -48,6 +48,7 @@
 #include "ccPickingHub.h"
 #include "ccPickingListener.h"
 #include "ccGLWindowInterface.h"
+#include "FileIOFilter.h"
 
 #include "ccGLWindowSignalEmitter.h"
 
@@ -277,6 +278,7 @@ namespace MaastoPlugin
         , m_linePoint1Highlight( nullptr )
         , m_linePoint2Highlight( nullptr )
         , m_lastTargetCode( -1 )
+        , m_saveButton( nullptr )
         , m_pickingHub( nullptr )
         , m_pickPointButton( nullptr )
         , m_pickInfoLabel( nullptr )
@@ -315,6 +317,12 @@ namespace MaastoPlugin
             topRow->addWidget( m_pickPointButton );
 
             topRow->addStretch();
+
+            m_saveButton = new QPushButton( "Tallenna", this );
+            m_saveButton->setFixedWidth( 80 );
+            m_saveButton->setEnabled( false );
+            topRow->addWidget( m_saveButton );
+
             layout->addLayout( topRow );
         }
 
@@ -341,6 +349,11 @@ namespace MaastoPlugin
                         m_pickInfoLabel->clear();
                 }
             } );
+
+        connect( m_saveButton, &QPushButton::clicked, this, [this]()
+        {
+            saveLasFile();
+        } );
 
         connect( m_fileButton, &QPushButton::clicked, this, [this]()
         {
@@ -1156,6 +1169,15 @@ namespace MaastoPlugin
         populateComboBox( m_valuesComboBox, keepValues );
         populateTargetClassComboBox( m_lastTargetCode );
         populateColorComboBox( keepColor );
+
+        // Päivitä Tallenna-napin tila
+        if ( m_saveButton )
+        {
+            const QString path = resolveCloudFilePath( m_cloud );
+            const QString lc   = path.toLower();
+            m_saveButton->setEnabled( !path.isEmpty()
+                                      && ( lc.endsWith( ".las" ) || lc.endsWith( ".laz" ) ) );
+        }
 
         m_updatingCloud = false;
     }
@@ -3590,6 +3612,105 @@ namespace MaastoPlugin
         m_lineP2 = newP2;
 
         refreshHighlights();
+    }
+
+    // ----------------------------------------------------------------
+    // resolveCloudFilePath
+    // ----------------------------------------------------------------
+
+    QString MaastoDialog::resolveCloudFilePath( ccPointCloud *cloud ) const
+    {
+        if ( !cloud )
+            return {};
+
+        // Parent-objektin nimi on muotoa "tiedosto.las (/polku/kansioon)"
+        ccHObject *parent = cloud->getParent();
+        if ( !parent )
+            return {};
+
+        const QString fullName = parent->getName();
+
+        // Hae hakemistopolku sulkujen sisältä
+        const QRegularExpression re( R"(\((.+)\)$)" );
+        const QRegularExpressionMatch match = re.match( fullName );
+        if ( !match.hasMatch() )
+            return {};
+
+        const QString dirPath  = match.captured( 1 );
+        // Tiedostonimi on kaikki ennen " ("-osuutta
+        const int sepIdx = fullName.lastIndexOf( " (" );
+        if ( sepIdx <= 0 )
+            return {};
+        const QString fileName = fullName.left( sepIdx );
+
+        return QDir( dirPath ).absoluteFilePath( fileName );
+    }
+
+    // ----------------------------------------------------------------
+    // saveLasFile
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::saveLasFile()
+    {
+        if ( !m_cloud )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: ei aktiivista pistepilveä",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        const QString filePath = resolveCloudFilePath( m_cloud );
+        if ( filePath.isEmpty() )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: tiedostopolkua ei voitu selvittää — avaa tiedosto ensin",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        const QString lc = filePath.toLower();
+        if ( !lc.endsWith( ".las" ) && !lc.endsWith( ".laz" ) )
+        {
+            m_appInterface->dispToConsole(
+                "MaastoPlugin: tallennus tukee vain .las/.laz-tiedostoja",
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        if ( !QFile::exists( filePath ) )
+        {
+            m_appInterface->dispToConsole(
+                QString( "MaastoPlugin: tiedostoa ei löydy: %1" ).arg( filePath ),
+                ccMainAppInterface::WRN_CONSOLE_MESSAGE );
+            return;
+        }
+
+        // Hiljaiseen tallennukseen: ei dialogia, kaikki scalar fieldit mukaan automaattisesti
+        // (alwaysDisplaySaveDialog = false aktivoi komentorivimoodin LasIOFilter:ssa)
+        FileIOFilter::SaveParameters params;
+        params.alwaysDisplaySaveDialog = false;
+        params.parentWidget            = nullptr;
+
+        const CC_FILE_ERROR err = FileIOFilter::SaveToFile(
+            m_cloud,
+            filePath,
+            params,
+            "LAS file (*.las *.laz)" );
+
+        if ( err == CC_FERR_NO_ERROR )
+        {
+            m_appInterface->dispToConsole(
+                QString( "MaastoPlugin: tallennettu → %1" ).arg( filePath ),
+                ccMainAppInterface::STD_CONSOLE_MESSAGE );
+        }
+        else
+        {
+            m_appInterface->dispToConsole(
+                QString( "MaastoPlugin: tallennus epäonnistui (virhekoodi %1): %2" )
+                    .arg( static_cast<int>( err ) ).arg( filePath ),
+                ccMainAppInterface::ERR_CONSOLE_MESSAGE );
+        }
     }
 
     // ----------------------------------------------------------------

@@ -123,6 +123,13 @@ namespace MaastoPlugin
         void loadSettingsFromFile( const QString &path,
                                    MaastoPlugin::SettingsDialog *dlg = nullptr );
 
+        // Tallentaa aktiivisen .las/.laz-pilven olemassa olevan tiedoston päälle
+        void saveLasFile();
+
+        // Palauttaa pistepilven alkuperäisen tiedostopolun parent-nimen perusteella
+        // tai tyhjän merkkijonon jos polkua ei voida selvittää
+        QString resolveCloudFilePath( ccPointCloud *cloud ) const;
+
         ccMainAppInterface *m_appInterface;
         ccPointCloud       *m_cloud;
 
@@ -227,6 +234,9 @@ namespace MaastoPlugin
         std::unordered_set<unsigned>  m_lockedIndices;          // snapshot lukitushetkellä
         std::map<unsigned, int>       m_preLockedHitCount;      // m_indexHitCount ennen lukitusta
         size_t                        m_preLockedPrismCount;    // prismojen määrä ennen lukitusta
+
+        // Tallenna-nappi
+        QPushButton        *m_saveButton;
 
         // Point picking
         ccPickingHub       *m_pickingHub;
