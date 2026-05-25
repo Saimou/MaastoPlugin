@@ -24,10 +24,10 @@
 #include "PolygonDrawer.h"
 
 class ccMainAppInterface;
+class ccGLWindowInterface;
 class ccPickingHub;
 class ccPointCloud;
 class ccHObject;
-class SelectionViewDialog;
 
 namespace MaastoPlugin
 {
@@ -229,7 +229,8 @@ namespace MaastoPlugin
         bool                          m_showOnlyMode;           // onko tila päällä
         bool                          m_lockViewMode;           // onko näkymä lukittu
         ccPointCloud                 *m_selectionOnlyCloud;     // väliaikainen pilvi "vain valinta" -tilaan
-        SelectionViewDialog          *m_selectionViewDialog;    // erillinen 3D-ikkuna
+        ccGLWindowInterface          *m_selectionGLWindow;      // MDI 3D-ikkuna leikkaukselle
+        QWidget                      *m_selectionGLWidget;      // MDI-ikkunan Qt-widget
         std::vector<unsigned>         m_selectionIndices;       // valittujen pisteiden indeksit m_cloud:ssa
 
         // "Lukitse näkymä" -tila

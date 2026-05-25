@@ -1,12 +1,12 @@
 #include "MaastoAction.h"
 #include "PolygonDrawer.h"
-#include "SelectionViewDialog.h"
 #include "SettingsDialog.h"
 #include "VolumeBuilder.h"
 #include "ClassDefinition.h"
 
 #include "ccMainAppInterface.h"
 #include "ccGLWindowInterface.h"
+#include "ccGLWindowSignalEmitter.h"
 #include "ccHObjectCaster.h"
 #include "ccMesh.h"
 #include "ccPointCloud.h"
@@ -17,6 +17,8 @@
 #include "ccColorTypes.h"
 
 #include <QMainWindow>
+#include <QMdiArea>
+#include <QMdiSubWindow>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -116,6 +118,16 @@ namespace MaastoPlugin
             m_cloud->setVisible( true );
             for ( ccHObject *obj : m_highlightObjects )
                 obj->setVisible( true );
+        }
+        // Sulje MDI-ikkuna siististi
+        if ( m_selectionGLWindow )
+        {
+            if ( m_selectionOnlyCloud )
+                m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+            m_selectionGLWidget->hide();
+            m_appInterface->destroyGLWindow( m_selectionGLWindow );
+            m_selectionGLWindow = nullptr;
+            m_selectionGLWidget = nullptr;
         }
         removeSelectionOnlyCloud();
 
@@ -267,7 +279,8 @@ namespace MaastoPlugin
         , m_showOnlyMode( false )
         , m_lockViewMode( false )
         , m_selectionOnlyCloud( nullptr )
-        , m_selectionViewDialog( nullptr )
+        , m_selectionGLWindow( nullptr )
+        , m_selectionGLWidget( nullptr )
         , m_preLockedPrismCount( 0 )
         , m_drawLineButton( nullptr )
         , m_lineAxisComboBox( nullptr )
@@ -2022,9 +2035,9 @@ namespace MaastoPlugin
     {
         if ( m_selectionOnlyCloud )
         {
-            // Cloudia ei ole lisätty globaaliin DB:hen — poistetaan suoraan
-            if ( m_selectionViewDialog )
-                m_selectionViewDialog->clearCloud();
+            // Poistetaan MDI-ikkunan omasta DB:stä ennen deletea
+            if ( m_selectionGLWindow )
+                m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
             delete m_selectionOnlyCloud;
             m_selectionOnlyCloud = nullptr;
         }
@@ -2110,25 +2123,59 @@ namespace MaastoPlugin
             }
         }
 
-        // 4. Luo tai päivitä erillinen ikkuna
-        if ( !m_selectionViewDialog )
+        // 4. Luo MDI 3D-ikkuna virallista kautta jos ei vielä ole
+        if ( !m_selectionGLWindow )
         {
-            m_selectionViewDialog = new SelectionViewDialog( m_appInterface, this );
-            connect( m_selectionViewDialog, &SelectionViewDialog::closed,
-                     this, [this]()
+            m_appInterface->createGLWindow( m_selectionGLWindow, m_selectionGLWidget );
+            if ( !m_selectionGLWindow || !m_selectionGLWidget )
             {
-                m_showOnlyButton->blockSignals( true );
-                m_showOnlyButton->setChecked( false );
-                m_showOnlyButton->blockSignals( false );
-                // disableShowOnlyMode() sulkee ikkunan ja poistaa pilven
-                disableShowOnlyMode();
+                delete m_selectionOnlyCloud;
+                m_selectionOnlyCloud = nullptr;
+                return;
+            }
+
+            // Lisätään MDI-alueelle — haetaan pääikkunan centralWidget
+            QMainWindow *mainWin = m_appInterface->getMainWindow();
+            QMdiArea *mdiArea = qobject_cast<QMdiArea*>( mainWin->centralWidget() );
+            if ( mdiArea )
+            {
+                QMdiSubWindow *sub = mdiArea->addSubWindow( m_selectionGLWidget );
+                sub->setAttribute( Qt::WA_DeleteOnClose, false );
+                sub->setWindowTitle( "Valinta" );
+            }
+
+            // Kytketään sulkemissignaali: käyttäjä sulkee ikkunan → puretaan tila
+            connect( m_selectionGLWindow->signalEmitter(),
+                     &ccGLWindowSignalEmitter::aboutToClose,
+                     this, [this]( ccGLWindowInterface* )
+            {
+                m_selectionGLWindow = nullptr;
+                m_selectionGLWidget = nullptr;
+                // Pilvi on jo poistunut ikkunan mukana — nollataan osoitin
+                m_selectionOnlyCloud = nullptr;
+                // Päivitetään nappi
+                if ( m_showOnlyButton )
+                {
+                    m_showOnlyButton->blockSignals( true );
+                    m_showOnlyButton->setChecked( false );
+                    m_showOnlyButton->blockSignals( false );
+                }
+                m_showOnlyMode = false;
             } );
         }
+        else
+        {
+            // Ikkuna on jo olemassa — poistetaan vanha pilvi ensin
+            if ( m_selectionOnlyCloud )
+                m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+        }
 
-        m_selectionViewDialog->showCloud( m_selectionOnlyCloud );
-        m_selectionViewDialog->show();
-        m_selectionViewDialog->raise();
-        m_selectionViewDialog->activateWindow();
+        // 5. Näytetään leikkauspilvi MDI-ikkunassa
+        m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
+        m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
+        m_selectionGLWidget->show();
+        m_selectionGLWindow->zoomGlobal();
+        m_selectionGLWindow->redraw();
 
         // Pääpilvi ja highlight-pilvet jäävät alkuperäiseen ikkunaan — ei piiloteta
         m_appInterface->refreshAll();
@@ -2140,16 +2187,22 @@ namespace MaastoPlugin
 
     void MaastoDialog::disableShowOnlyMode()
     {
-        if ( m_selectionViewDialog )
+        if ( m_selectionGLWindow )
         {
-            m_selectionViewDialog->clearCloud();
-            m_selectionViewDialog->hide();
+            if ( m_selectionOnlyCloud )
+                m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+            m_selectionGLWidget->hide();
+            m_appInterface->destroyGLWindow( m_selectionGLWindow );
+            m_selectionGLWindow = nullptr;
+            m_selectionGLWidget = nullptr;
         }
+
+        // removeSelectionOnlyCloud ei enää yritä poistaa ikkunasta (window=null)
         removeSelectionOnlyCloud();
 
         if ( m_cloud )
         {
-            // Varmista että pääpilvi on näkyvissä (se ei ole piilotettu, mutta varmuuden vuoksi)
+            // Varmista että pääpilvi on näkyvissä
             m_cloud->setVisible( true );
             m_cloud->prepareDisplayForRefresh();
         }
