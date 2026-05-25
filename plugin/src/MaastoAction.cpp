@@ -1365,9 +1365,12 @@ namespace MaastoPlugin
             QTreeWidgetItem *item = new QTreeWidgetItem( m_listWidget );
 
             // Value-sarake (col 0): checkbox luokittelua varten
+            // Jos m_checkedClassCodes on tyhjä (ensimmäinen täyttö), kaikki oletuksena Checked
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
-            item->setCheckState( 0, m_checkedClassCodes.contains( val.toInt() )
-                                    ? Qt::Checked : Qt::Unchecked );
+            const bool checked = m_checkedClassCodes.isEmpty()
+                                 ? true
+                                 : m_checkedClassCodes.contains( val.toInt() );
+            item->setCheckState( 0, checked ? Qt::Checked : Qt::Unchecked );
             item->setText( 0, val );
 
             // Show-sarake (col 1): checkbox näkyvyyttä varten
