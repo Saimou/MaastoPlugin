@@ -1,4 +1,6 @@
 #include <QtGui>
+#include <QMainWindow>
+#include <QMessageBox>
 
 #include "qMaastoPlugin.h"
 #include "MaastoAction.h"
@@ -59,6 +61,17 @@ QList<QAction *> qMaastoPlugin::getActions()
             const ccHObject::Container &selected = m_app->getSelectedEntities();
             if ( !selected.empty() )
                 cloud = ccHObjectCaster::ToPointCloud( selected[0] );
+
+            if ( cloud == nullptr )
+            {
+                QMessageBox::information(
+                    static_cast<QWidget*>( m_app->getMainWindow() ),
+                    "Maasto-plugin",
+                    "Pistepilveä ei ole valittuna.\n\n"
+                    "Valitse pistepilvi DB-puusta (vasen paneeli) ennen pluginin käynnistystä."
+                );
+                return;
+            }
 
             // Avaa uusi dialogi
             m_dialog = MaastoPlugin::openDialog( m_app, cloud );
