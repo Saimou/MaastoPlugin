@@ -22,20 +22,9 @@ void qMaastoPlugin::onNewSelection( const ccHObject::Container &selectedEntities
 
     m_action->setEnabled( true );
 
-    // Päivitä dialogi jos se on auki
-    if ( m_dialog == nullptr )
+    // Dialogi auki → pilvi lukittu, ei päivitetä valinnan muuttuessa
+    if ( m_dialog != nullptr )
         return;
-
-    // Estä silmukka: applyColorField() asettaa m_updatingCloud=true ennen
-    // updateUI()-kutsua joka triggeroi tämän — ohitetaan silloin päivitys
-    if ( m_dialog->isUpdatingCloud() )
-        return;
-
-    ccPointCloud *cloud = nullptr;
-    if ( !selectedEntities.empty() )
-        cloud = ccHObjectCaster::ToPointCloud( selectedEntities[0] );
-
-    m_dialog->updateCloud( cloud );
 }
 
 QList<QAction *> qMaastoPlugin::getActions()
