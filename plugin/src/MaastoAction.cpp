@@ -1,5 +1,6 @@
 #include "MaastoAction.h"
 #include "PolygonDrawer.h"
+#include "SelectionViewDialog.h"
 #include "SettingsDialog.h"
 #include "VolumeBuilder.h"
 #include "ClassDefinition.h"
@@ -266,6 +267,7 @@ namespace MaastoPlugin
         , m_showOnlyMode( false )
         , m_lockViewMode( false )
         , m_selectionOnlyCloud( nullptr )
+        , m_selectionViewDialog( nullptr )
         , m_preLockedPrismCount( 0 )
         , m_drawLineButton( nullptr )
         , m_lineAxisComboBox( nullptr )
@@ -2013,7 +2015,10 @@ namespace MaastoPlugin
     {
         if ( m_selectionOnlyCloud )
         {
-            m_appInterface->removeFromDB( m_selectionOnlyCloud, true );
+            // Cloudia ei ole lisätty globaaliin DB:hen — poistetaan suoraan
+            if ( m_selectionViewDialog )
+                m_selectionViewDialog->clearCloud();
+            delete m_selectionOnlyCloud;
             m_selectionOnlyCloud = nullptr;
         }
     }
@@ -2048,25 +2053,10 @@ namespace MaastoPlugin
             srcIndices = &m_selectionIndices;
         }
 
-        // 1. Piilota pääpilvi
-        m_cloud->setVisible( false );
-        m_cloud->prepareDisplayForRefresh();
-
-        // 2. Highlight-pilvet: piilotetaan vain normaalitilassa
-        //    Lukitustilassa highlight jää näkyviin (korostusvärillä päällä selectionOnlyCloud:n päällä)
-        if ( !m_lockViewMode )
-        {
-            for ( ccHObject *obj : m_highlightObjects )
-            {
-                obj->setVisible( false );
-                obj->prepareDisplayForRefresh();
-            }
-        }
-
-        // 3. Poista vanha väliaikainen pilvi jos on
+        // 1. Poista vanha väliaikainen pilvi jos on
         removeSelectionOnlyCloud();
 
-        // 4. Rakenna uusi "vain valinta" -pilvi srcIndices:stä
+        // 2. Rakenna uusi "vain valinta" -pilvi srcIndices:stä
         const unsigned count = static_cast<unsigned>( srcIndices->size() );
         m_selectionOnlyCloud = new ccPointCloud( "SelectionOnly" );
         if ( !m_selectionOnlyCloud->reserve( count ) )
@@ -2079,10 +2069,9 @@ namespace MaastoPlugin
         for ( unsigned idx : *srcIndices )
             m_selectionOnlyCloud->addPoint( *m_cloud->getPoint( idx ) );
 
-        // 5. Kopioi visualisointi pääpilveltä (käyttäen srcIndices:iä)
+        // 3. Kopioi visualisointi pääpilveltä (käyttäen srcIndices:iä)
         if ( m_cloud->sfShown() )
         {
-            // SF-tila: kopioi scalar field arvot ja värikaava
             const int srcSfIdx = m_cloud->getCurrentDisplayedScalarFieldIndex();
             ccScalarField *srcSf = static_cast<ccScalarField*>(
                 m_cloud->getScalarField( srcSfIdx ) );
@@ -2105,7 +2094,6 @@ namespace MaastoPlugin
         }
         else if ( m_cloud->colorsShown() )
         {
-            // RGB-tila: kopioi per-pisteen RGB pääpilveltä
             if ( m_cloud->hasColors() && m_selectionOnlyCloud->reserveTheRGBTable() )
             {
                 for ( unsigned idx : *srcIndices )
@@ -2115,12 +2103,27 @@ namespace MaastoPlugin
             }
         }
 
-        // 6. Lisää DB:hen pääpilven lapseksi
-        m_cloud->addChild( m_selectionOnlyCloud );
-        m_appInterface->addToDB(
-            m_selectionOnlyCloud,
-            false, false, false, false );
+        // 4. Luo tai päivitä erillinen ikkuna
+        if ( !m_selectionViewDialog )
+        {
+            m_selectionViewDialog = new SelectionViewDialog( m_appInterface, this );
+            connect( m_selectionViewDialog, &SelectionViewDialog::closed,
+                     this, [this]()
+            {
+                m_showOnlyButton->blockSignals( true );
+                m_showOnlyButton->setChecked( false );
+                m_showOnlyButton->blockSignals( false );
+                // disableShowOnlyMode() sulkee ikkunan ja poistaa pilven
+                disableShowOnlyMode();
+            } );
+        }
 
+        m_selectionViewDialog->showCloud( m_selectionOnlyCloud );
+        m_selectionViewDialog->show();
+        m_selectionViewDialog->raise();
+        m_selectionViewDialog->activateWindow();
+
+        // Pääpilvi ja highlight-pilvet jäävät alkuperäiseen ikkunaan — ei piiloteta
         m_appInterface->refreshAll();
     }
 
@@ -2130,21 +2133,18 @@ namespace MaastoPlugin
 
     void MaastoDialog::disableShowOnlyMode()
     {
-        if ( !m_cloud )
-            return;
-
-        // 1. Poista "vain valinta" -pilvi
+        if ( m_selectionViewDialog )
+        {
+            m_selectionViewDialog->clearCloud();
+            m_selectionViewDialog->hide();
+        }
         removeSelectionOnlyCloud();
 
-        // 2. Palauta pääpilvi näkyviin
-        m_cloud->setVisible( true );
-        m_cloud->prepareDisplayForRefresh();
-
-        // 3. Palauta highlight-pilvet näkyviin
-        for ( ccHObject *obj : m_highlightObjects )
+        if ( m_cloud )
         {
-            obj->setVisible( true );
-            obj->prepareDisplayForRefresh();
+            // Varmista että pääpilvi on näkyvissä (se ei ole piilotettu, mutta varmuuden vuoksi)
+            m_cloud->setVisible( true );
+            m_cloud->prepareDisplayForRefresh();
         }
 
         m_appInterface->refreshAll();

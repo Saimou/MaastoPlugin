@@ -27,6 +27,7 @@ class ccMainAppInterface;
 class ccPickingHub;
 class ccPointCloud;
 class ccHObject;
+class SelectionViewDialog;
 
 namespace MaastoPlugin
 {
@@ -228,6 +229,7 @@ namespace MaastoPlugin
         bool                          m_showOnlyMode;           // onko tila päällä
         bool                          m_lockViewMode;           // onko näkymä lukittu
         ccPointCloud                 *m_selectionOnlyCloud;     // väliaikainen pilvi "vain valinta" -tilaan
+        SelectionViewDialog          *m_selectionViewDialog;    // erillinen 3D-ikkuna
         std::vector<unsigned>         m_selectionIndices;       // valittujen pisteiden indeksit m_cloud:ssa
 
         // "Lukitse näkymä" -tila
