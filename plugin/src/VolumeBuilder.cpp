@@ -298,18 +298,6 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
     ccGLCameraParameters camera;
     glWindow->getGLCameraParameters( camera );
 
-    const ccViewportParameters& vp = glWindow->getViewportParameters();
-    const CCVector3d forward = vp.getViewDir();
-
-    // Kameran world-space sijainti (object-centered vs viewer-centered)
-    CCVector3d eyePos = vp.getCameraCenter();
-    if ( vp.objectCenteredView )
-    {
-        CCVector3d PC = vp.getCameraCenter() - vp.getPivotPoint();
-        vp.viewMat.inverse().apply( PC );
-        eyePos = vp.getPivotPoint() + PC;
-    }
-
     // ---- Polygon corner GL -koordinaateissa (ManualSegmentationTools käyttää näitä) ----
     const double halfW = camera.viewport[2] * 0.5;
     const double halfH = camera.viewport[3] * 0.5;
@@ -356,11 +344,6 @@ ccPointCloud* VolumeBuilder::highlightPointsInsideVolume(
                  Pd.z < bbMin.z || Pd.z > bbMax.z )
                 continue;
         }
-
-        // Syvyystesti: pisteen syvyys kameran katselusuunnassa
-        const double depth = ( Pd - eyePos ).dot( forward );
-        if ( depth < nearDist || depth > farDist )
-            continue;
 
         // 2D-projektiotesti: projisoidaan piste kameran näkymään (corner GL)
         CCVector3d P2D;
