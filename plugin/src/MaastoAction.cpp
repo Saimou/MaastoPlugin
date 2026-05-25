@@ -281,6 +281,7 @@ namespace MaastoPlugin
         , m_selectionOnlyCloud( nullptr )
         , m_selectionGLWindow( nullptr )
         , m_selectionGLWidget( nullptr )
+        , m_workingGLWindow( nullptr )
         , m_preLockedPrismCount( 0 )
         , m_drawLineButton( nullptr )
         , m_lineAxisComboBox( nullptr )
@@ -3196,6 +3197,9 @@ namespace MaastoPlugin
             return;
         }
 
+        // Tallennetaan ikkuna — stopMeasure irrottaa signaalin samasta ikkunasta
+        m_workingGLWindow = win;
+
         // Aktivoi point picking
         win->setPickingMode( ccGLWindowInterface::POINT_PICKING );
 
@@ -3253,8 +3257,9 @@ namespace MaastoPlugin
 
     void MaastoDialog::stopMeasure()
     {
-        // Irrota signaali tarvittaessa
-        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        // Irrota signaali siitä ikkunasta johon se kytkettiin
+        ccGLWindowInterface *win = m_workingGLWindow;
+        m_workingGLWindow = nullptr;
         if ( win )
         {
             disconnect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,
@@ -3324,6 +3329,9 @@ namespace MaastoPlugin
             stopLinePicking();
             return;
         }
+
+        // Tallennetaan ikkuna — stopLinePicking irrottaa signaalin samasta ikkunasta
+        m_workingGLWindow = win;
 
         win->setPickingMode( ccGLWindowInterface::POINT_PICKING );
 
@@ -3409,7 +3417,9 @@ namespace MaastoPlugin
 
     void MaastoDialog::stopLinePicking()
     {
-        ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+        // Irrota signaali siitä ikkunasta johon se kytkettiin
+        ccGLWindowInterface *win = m_workingGLWindow;
+        m_workingGLWindow = nullptr;
         if ( win )
         {
             disconnect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,

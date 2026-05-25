@@ -233,6 +233,9 @@ namespace MaastoPlugin
         QWidget                      *m_selectionGLWidget;      // MDI-ikkunan Qt-widget
         std::vector<unsigned>         m_selectionIndices;       // valittujen pisteiden indeksit m_cloud:ssa
 
+        // Ikkuna johon mittaus/viiva-työkalu on kytketty (tallennetaan start-hetkellä)
+        ccGLWindowInterface          *m_workingGLWindow;
+
         // "Lukitse näkymä" -tila
         std::unordered_set<unsigned>  m_lockedIndices;          // snapshot lukitushetkellä
         std::map<unsigned, int>       m_preLockedHitCount;      // m_indexHitCount ennen lukitusta
