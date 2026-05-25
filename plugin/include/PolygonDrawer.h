@@ -44,6 +44,9 @@ public:
     // Tyhjä jos polygonia ei ole vielä suljettu.
     const std::vector<Point2D>& getClosedVertices() const { return m_closedVertices; }
 
+    // Palauttaa ikkunan johon viimeisin polygon piirrettiin (asetettu onRightClick():ssä)
+    ccGLWindowInterface *drawnInWindow() const { return m_previousGLWindow; }
+
 signals:
     void polygonClosed();
     void drawingFinished();

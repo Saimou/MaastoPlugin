@@ -1026,7 +1026,11 @@ namespace MaastoPlugin
         connect( m_polygonDrawer, &PolygonDrawer::polygonClosed, this, [this]()
         {
             // Rakenna prisma-mesh piirretystä polygonista
-            ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+            // Käytetään piirtoikkunaa (ei getActiveGLWindow() joka saattaa palauttaa
+            // väärän ikkunan tai nullptr kun piirtotila on jo pois päältä)
+            ccGLWindowInterface *win = m_polygonDrawer->drawnInWindow();
+            if ( !win )
+                win = m_appInterface->getActiveGLWindow();
             if ( win && !m_polygonDrawer->getClosedVertices().empty() )
             {
                 const ccBBox clipBBox = ( m_cloud != nullptr )
