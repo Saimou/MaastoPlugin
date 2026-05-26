@@ -932,8 +932,12 @@ namespace MaastoPlugin
                 m_lockedIndices = std::unordered_set<unsigned>(
                     m_selectionIndices.begin(), m_selectionIndices.end() );
 
-                // Avaa ensin View 2 -ikkuna (tarvitaan ennen highlight-kopiointia)
-                // resetCamera=true: sovitetaan kamera aina uuteen valintaan
+                // Jos View 2 on jo auki, suljetaan se ensin jotta OwnDB on puhdas
+                // ennen uuden valinnan lataamista
+                if ( m_selectionWindowIsOwned )
+                    disableShowOnlyMode();
+
+                // Avaa View 2 -ikkuna uudelle valinnalle
                 enableShowOnlyMode( /*resetCamera=*/true );
 
                 // Korostetaan lukitun joukon pisteet ja synkataan View 2:een
