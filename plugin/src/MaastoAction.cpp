@@ -2132,10 +2132,7 @@ namespace MaastoPlugin
                     m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
             }
 
-            // Piilotetaan pääpilvi View 1:stä (valinta näkyy vain erillisessä ikkunassa)
-            m_cloud->setVisible( false );
-            m_cloud->prepareDisplayForRefresh();
-
+            // Pääpilvi jää näkyviin View 1:ssä — valinta näytetään lisäksi erillisessä ikkunassa
             m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
             m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
             m_selectionGLWidget->show();
