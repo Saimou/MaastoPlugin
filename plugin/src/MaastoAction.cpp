@@ -263,7 +263,7 @@ namespace MaastoPlugin
         , m_highlightButton( nullptr )
         , m_clearSelectionButton( nullptr )
         , m_showOnlyButton( nullptr )
-        , m_lockViewButton( nullptr )
+        , m_separateWindowCheckBox( nullptr )
         , m_fileButton( nullptr )
         , m_minPolygonCountSpinBox( nullptr )
         , m_nearDistSpinBox( nullptr )
@@ -278,6 +278,7 @@ namespace MaastoPlugin
         , m_measureHighlight( nullptr )
         , m_showOnlyMode( false )
         , m_lockViewMode( false )
+        , m_selectionWindowIsOwned( false )
         , m_selectionOnlyCloud( nullptr )
         , m_selectionGLWindow( nullptr )
         , m_selectionGLWidget( nullptr )
@@ -667,16 +668,16 @@ namespace MaastoPlugin
             QHBoxLayout *showLockRow = new QHBoxLayout();
             showLockRow->setContentsMargins( 0, 0, 0, 0 );
 
-            m_showOnlyButton = new QPushButton( "Näytä vain valinta", this );
+            m_showOnlyButton = new QPushButton( "Näytä valinta", this );
             m_showOnlyButton->setCheckable( true );
             m_showOnlyButton->setEnabled( false );   // disabloitu kunnes on valinta
             showLockRow->addWidget( m_showOnlyButton );
 
-            m_lockViewButton = new QPushButton( "Lukitse näkymä", this );
-            m_lockViewButton->setCheckable( true );
-            m_lockViewButton->setEnabled( false );   // disabloitu kunnes showOnly päällä
-            showLockRow->addWidget( m_lockViewButton );
+            m_separateWindowCheckBox = new QCheckBox( "näytä erillisessä ikkunassa", this );
+            m_separateWindowCheckBox->setChecked( false );
+            showLockRow->addWidget( m_separateWindowCheckBox );
 
+            showLockRow->addStretch();
             polygonCol->addLayout( showLockRow );
         }
 
@@ -902,51 +903,24 @@ namespace MaastoPlugin
             }
         } );
 
-        // "Näytä vain valinta" -toggle
+        // "Näytä valinta" -toggle
         connect( m_showOnlyButton, &QPushButton::toggled, this, [this]( bool checked )
         {
             m_showOnlyMode = checked;
             if ( checked )
             {
-                m_lockViewButton->setEnabled( true );
-                enableShowOnlyMode();
-            }
-            else
-            {
-                // Pura lukitus ensin
-                m_lockViewMode = false;
-                m_lockViewButton->blockSignals( true );
-                m_lockViewButton->setChecked( false );
-                m_lockViewButton->blockSignals( false );
-                m_lockViewButton->setEnabled( false );
-                disableShowOnlyMode();
-            }
-        } );
-
-        // "Lukitse näkymä" -toggle
-        connect( m_lockViewButton, &QPushButton::toggled, this, [this]( bool checked )
-        {
-            m_lockViewMode = checked;
-            if ( checked )
-            {
-                // Tallennetaan snapshot lukitushetkellä
+                // Otetaan snapshot nykyisestä valinnasta (lukitus)
+                m_lockViewMode        = true;
                 m_preLockedHitCount   = m_indexHitCount;
                 m_preLockedPrismCount = m_meshObjects.size();
                 m_lockedIndices = std::unordered_set<unsigned>(
                     m_selectionIndices.begin(), m_selectionIndices.end() );
-                // ShowOnly-nappi ei käytettävissä lukituksen aikana
-                m_showOnlyButton->setEnabled( false );
 
-                // Rakennetaan highlight suoraan kaikista lukitun joukon pisteistä
-                // (ohitetaan minHits/SF-suodatus — kaikki lukitut pisteet korostetaan)
-                if ( m_showOnlyMode )
-                    disableShowOnlyMode();
+                // Korostetaan kaikki lukitun joukon pisteet
                 removeHighlightObjects();
                 buildHighlightFromIndices( std::vector<unsigned>(
                     m_lockedIndices.begin(), m_lockedIndices.end() ) );
 
-                // Rakennetaan selectionOnlyCloud m_lockedIndices:stä (kaikki lukitut pisteet)
-                // ja highlight jää näkyviin päälle
                 enableShowOnlyMode();
 
                 m_cloud->prepareDisplayForRefresh_recursive();
@@ -954,7 +928,7 @@ namespace MaastoPlugin
             }
             else
             {
-                // Poistetaan lukituksen aikana lisätyt prismat DB:stä
+                // Puretaan lukitus ja poistetaan lukituksen aikana lisätyt prismat
                 for ( size_t i = m_preLockedPrismCount; i < m_meshObjects.size(); ++i )
                     m_appInterface->removeFromDB( m_meshObjects[i], true );
                 if ( m_meshObjects.size() > m_preLockedPrismCount )
@@ -966,15 +940,13 @@ namespace MaastoPlugin
                         m_prismData.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
                         m_prismData.end() );
                 }
-                // Palautetaan alkuperäinen hit-count
                 m_indexHitCount = m_preLockedHitCount;
-                // Nollataan lukitustila
                 m_lockedIndices.clear();
                 m_preLockedHitCount.clear();
                 m_preLockedPrismCount = 0;
-                // Palautetaan showOnly-nappi käyttöön
-                m_showOnlyButton->setEnabled( true );
-                // Päivitetään näkymä alkuperäisillä prismoilla
+                m_lockViewMode = false;
+
+                disableShowOnlyMode();
                 refreshHighlights();
             }
         } );
@@ -1146,13 +1118,6 @@ namespace MaastoPlugin
             m_lockedIndices.clear();
             m_preLockedHitCount.clear();
             m_preLockedPrismCount = 0;
-            if ( m_lockViewButton )
-            {
-                m_lockViewButton->blockSignals( true );
-                m_lockViewButton->setChecked( false );
-                m_lockViewButton->blockSignals( false );
-                m_lockViewButton->setEnabled( false );
-            }
             disableShowOnlyMode();
             m_showOnlyMode = false;
             if ( m_showOnlyButton )
@@ -1966,13 +1931,6 @@ namespace MaastoPlugin
             m_lockedIndices.clear();
             m_preLockedHitCount.clear();
             m_preLockedPrismCount = 0;
-            if ( m_lockViewButton )
-            {
-                m_lockViewButton->blockSignals( true );
-                m_lockViewButton->setChecked( false );
-                m_lockViewButton->blockSignals( false );
-                m_lockViewButton->setEnabled( false );
-            }
             disableShowOnlyMode();
             m_showOnlyMode = false;
             if ( m_showOnlyButton )
@@ -2053,31 +2011,17 @@ namespace MaastoPlugin
         if ( !m_cloud )
             return;
 
-        // Lukitustilassa: selectionOnlyCloud rakennetaan m_lockedIndices:stä (kaikki lukitun joukon
-        // pisteet näkyvissä normaalivärillä). Highlight-pilvet jätetään näkyviin (korostusväri päälle).
-        // Normaalitilassa: selectionOnlyCloud rakennetaan m_selectionIndices:stä, highlight piilotetaan.
+        // Lähdeindeksit ovat aina m_lockedIndices (snapshot otettiin ennen kutsua)
+        if ( m_lockedIndices.empty() )
+            return;
 
-        const std::vector<unsigned> *srcIndices = nullptr;
-        std::vector<unsigned> lockedVec;
-
-        if ( m_lockViewMode )
-        {
-            if ( m_lockedIndices.empty() )
-                return;
-            lockedVec.assign( m_lockedIndices.begin(), m_lockedIndices.end() );
-            srcIndices = &lockedVec;
-        }
-        else
-        {
-            if ( m_selectionIndices.empty() )
-                return;
-            srcIndices = &m_selectionIndices;
-        }
+        const std::vector<unsigned> lockedVec( m_lockedIndices.begin(), m_lockedIndices.end() );
+        const std::vector<unsigned> *srcIndices = &lockedVec;
 
         // 1. Poista vanha väliaikainen pilvi jos on
         removeSelectionOnlyCloud();
 
-        // 2. Rakenna uusi "vain valinta" -pilvi srcIndices:stä
+        // 2. Rakenna uusi valintapilvi srcIndices:stä
         const unsigned count = static_cast<unsigned>( srcIndices->size() );
         m_selectionOnlyCloud = new ccPointCloud( "SelectionOnly" );
         if ( !m_selectionOnlyCloud->reserve( count ) )
@@ -2090,7 +2034,7 @@ namespace MaastoPlugin
         for ( unsigned idx : *srcIndices )
             m_selectionOnlyCloud->addPoint( *m_cloud->getPoint( idx ) );
 
-        // 3. Kopioi visualisointi pääpilveltä (käyttäen srcIndices:iä)
+        // 3. Kopioi visualisointi pääpilveltä
         if ( m_cloud->sfShown() )
         {
             const int srcSfIdx = m_cloud->getCurrentDisplayedScalarFieldIndex();
@@ -2124,61 +2068,107 @@ namespace MaastoPlugin
             }
         }
 
-        // 4. Luo MDI 3D-ikkuna virallista kautta jos ei vielä ole
-        if ( !m_selectionGLWindow )
+        const bool separateWindow = m_separateWindowCheckBox && m_separateWindowCheckBox->isChecked();
+
+        if ( separateWindow )
         {
-            m_appInterface->createGLWindow( m_selectionGLWindow, m_selectionGLWidget );
-            if ( !m_selectionGLWindow || !m_selectionGLWidget )
+            // --- Erillinen MDI-ikkuna (View 2) ---
+            m_selectionWindowIsOwned = true;
+
+            if ( !m_selectionGLWindow )
+            {
+                m_appInterface->createGLWindow( m_selectionGLWindow, m_selectionGLWidget );
+                if ( !m_selectionGLWindow || !m_selectionGLWidget )
+                {
+                    delete m_selectionOnlyCloud;
+                    m_selectionOnlyCloud = nullptr;
+                    return;
+                }
+
+                // Lisätään MDI-alueelle
+                QMainWindow *mainWin = m_appInterface->getMainWindow();
+                QMdiArea *mdiArea = qobject_cast<QMdiArea*>( mainWin->centralWidget() );
+                if ( mdiArea )
+                {
+                    QMdiSubWindow *sub = mdiArea->addSubWindow( m_selectionGLWidget );
+                    sub->setAttribute( Qt::WA_DeleteOnClose, false );
+                    sub->setWindowTitle( "Valinta" );
+                }
+
+                // Sulkemissignaali: käyttäjä sulkee MDI-ikkunan manuaalisesti
+                connect( m_selectionGLWindow->signalEmitter(),
+                         &ccGLWindowSignalEmitter::aboutToClose,
+                         this, [this]( ccGLWindowInterface* )
+                {
+                    m_selectionGLWindow      = nullptr;
+                    m_selectionGLWidget      = nullptr;
+                    m_selectionOnlyCloud     = nullptr;
+                    m_selectionWindowIsOwned = false;
+                    // Palauta pääpilvi näkyviin
+                    if ( m_cloud )
+                    {
+                        m_cloud->setVisible( true );
+                        m_cloud->prepareDisplayForRefresh();
+                    }
+                    // Nollaa nappi
+                    if ( m_showOnlyButton )
+                    {
+                        m_showOnlyButton->blockSignals( true );
+                        m_showOnlyButton->setChecked( false );
+                        m_showOnlyButton->blockSignals( false );
+                    }
+                    m_showOnlyMode = false;
+                    m_lockViewMode = false;
+                    m_lockedIndices.clear();
+                    m_preLockedHitCount.clear();
+                    m_preLockedPrismCount = 0;
+                    m_appInterface->refreshAll();
+                } );
+            }
+            else
+            {
+                // Ikkuna jo olemassa — poista vanha pilvi
+                if ( m_selectionOnlyCloud )
+                    m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+            }
+
+            // Piilotetaan pääpilvi View 1:stä (valinta näkyy vain erillisessä ikkunassa)
+            m_cloud->setVisible( false );
+            m_cloud->prepareDisplayForRefresh();
+
+            m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
+            m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
+            m_selectionGLWidget->show();
+            m_selectionGLWindow->zoomGlobal();
+            m_selectionGLWindow->redraw();
+        }
+        else
+        {
+            // --- Sama ikkuna (View 1) ---
+            m_selectionWindowIsOwned = false;
+            m_selectionGLWidget      = nullptr;
+
+            // Haetaan aktiivinen (View 1) ikkuna
+            ccGLWindowInterface *win = m_appInterface->getActiveGLWindow();
+            if ( !win )
             {
                 delete m_selectionOnlyCloud;
                 m_selectionOnlyCloud = nullptr;
                 return;
             }
 
-            // Lisätään MDI-alueelle — haetaan pääikkunan centralWidget
-            QMainWindow *mainWin = m_appInterface->getMainWindow();
-            QMdiArea *mdiArea = qobject_cast<QMdiArea*>( mainWin->centralWidget() );
-            if ( mdiArea )
-            {
-                QMdiSubWindow *sub = mdiArea->addSubWindow( m_selectionGLWidget );
-                sub->setAttribute( Qt::WA_DeleteOnClose, false );
-                sub->setWindowTitle( "Valinta" );
-            }
+            m_selectionGLWindow = win;
 
-            // Kytketään sulkemissignaali: käyttäjä sulkee ikkunan → puretaan tila
-            connect( m_selectionGLWindow->signalEmitter(),
-                     &ccGLWindowSignalEmitter::aboutToClose,
-                     this, [this]( ccGLWindowInterface* )
-            {
-                m_selectionGLWindow = nullptr;
-                m_selectionGLWidget = nullptr;
-                // Pilvi on jo poistunut ikkunan mukana — nollataan osoitin
-                m_selectionOnlyCloud = nullptr;
-                // Päivitetään nappi
-                if ( m_showOnlyButton )
-                {
-                    m_showOnlyButton->blockSignals( true );
-                    m_showOnlyButton->setChecked( false );
-                    m_showOnlyButton->blockSignals( false );
-                }
-                m_showOnlyMode = false;
-            } );
-        }
-        else
-        {
-            // Ikkuna on jo olemassa — poistetaan vanha pilvi ensin
-            if ( m_selectionOnlyCloud )
-                m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+            // Piilotetaan pääpilvi — valintapilvi korvaa sen
+            m_cloud->setVisible( false );
+            m_cloud->prepareDisplayForRefresh();
+
+            m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
+            m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
+            m_selectionGLWindow->zoomGlobal();
+            m_selectionGLWindow->redraw();
         }
 
-        // 5. Näytetään leikkauspilvi MDI-ikkunassa
-        m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
-        m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
-        m_selectionGLWidget->show();
-        m_selectionGLWindow->zoomGlobal();
-        m_selectionGLWindow->redraw();
-
-        // Pääpilvi ja highlight-pilvet jäävät alkuperäiseen ikkunaan — ei piiloteta
         m_appInterface->refreshAll();
     }
 
@@ -2192,18 +2182,26 @@ namespace MaastoPlugin
         {
             if ( m_selectionOnlyCloud )
                 m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
-            m_selectionGLWidget->hide();
-            m_appInterface->destroyGLWindow( m_selectionGLWindow );
-            m_selectionGLWindow = nullptr;
-            m_selectionGLWidget = nullptr;
+
+            if ( m_selectionWindowIsOwned )
+            {
+                // MDI-ikkuna — tuhotaan
+                m_selectionGLWidget->hide();
+                m_appInterface->destroyGLWindow( m_selectionGLWindow );
+                m_selectionGLWidget = nullptr;
+            }
+            // View 1 -tapauksessa ei tuhota ikkunaa — se on CC:n oma ikkuna
+
+            m_selectionGLWindow      = nullptr;
+            m_selectionWindowIsOwned = false;
         }
 
-        // removeSelectionOnlyCloud ei enää yritä poistaa ikkunasta (window=null)
+        // Poista väliaikainen pilvi (ikkuna-osoitin on jo nollattu, ei yritetä poistaa uudelleen)
         removeSelectionOnlyCloud();
 
+        // Palauta pääpilvi näkyviin
         if ( m_cloud )
         {
-            // Varmista että pääpilvi on näkyvissä
             m_cloud->setVisible( true );
             m_cloud->prepareDisplayForRefresh();
         }
@@ -2431,13 +2429,6 @@ namespace MaastoPlugin
             m_lockedIndices.clear();
             m_preLockedHitCount.clear();
             m_preLockedPrismCount = 0;
-            if ( m_lockViewButton )
-            {
-                m_lockViewButton->blockSignals( true );
-                m_lockViewButton->setChecked( false );
-                m_lockViewButton->blockSignals( false );
-                m_lockViewButton->setEnabled( false );
-            }
             if ( m_showOnlyButton )
             {
                 m_showOnlyButton->blockSignals( true );
@@ -2497,13 +2488,6 @@ namespace MaastoPlugin
                 m_lockedIndices.clear();
                 m_preLockedHitCount.clear();
                 m_preLockedPrismCount = 0;
-                if ( m_lockViewButton )
-                {
-                    m_lockViewButton->blockSignals( true );
-                    m_lockViewButton->setChecked( false );
-                    m_lockViewButton->blockSignals( false );
-                    m_lockViewButton->setEnabled( false );
-                }
                 if ( m_showOnlyButton )
                 {
                     m_showOnlyButton->blockSignals( true );

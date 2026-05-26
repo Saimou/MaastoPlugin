@@ -184,7 +184,7 @@ namespace MaastoPlugin
         QPushButton        *m_highlightButton;
         QPushButton        *m_clearSelectionButton;
         QPushButton        *m_showOnlyButton;
-        QPushButton        *m_lockViewButton;
+        QCheckBox          *m_separateWindowCheckBox;
         QPushButton        *m_fileButton;
         QSpinBox           *m_minPolygonCountSpinBox;
 
@@ -225,18 +225,19 @@ namespace MaastoPlugin
         std::vector<PrismData>    m_prismData;
         std::vector<ccHObject*>   m_highlightObjects;
 
-        // "Näytä vain valinta" -tila
+        // "Näytä valinta" -tila
         bool                          m_showOnlyMode;           // onko tila päällä
-        bool                          m_lockViewMode;           // onko näkymä lukittu
+        bool                          m_lockViewMode;           // onko näkymä lukittu (aina true kun showOnly päällä)
+        bool                          m_selectionWindowIsOwned; // true = MDI-ikkuna luotu createGLWindow():lla
         ccPointCloud                 *m_selectionOnlyCloud;     // väliaikainen pilvi "vain valinta" -tilaan
-        ccGLWindowInterface          *m_selectionGLWindow;      // MDI 3D-ikkuna leikkaukselle
-        QWidget                      *m_selectionGLWidget;      // MDI-ikkunan Qt-widget
+        ccGLWindowInterface          *m_selectionGLWindow;      // 3D-ikkuna jossa valinta näytetään
+        QWidget                      *m_selectionGLWidget;      // Qt-widget (vain MDI-tilassa)
         std::vector<unsigned>         m_selectionIndices;       // valittujen pisteiden indeksit m_cloud:ssa
 
         // Ikkuna johon mittaus/viiva-työkalu on kytketty (tallennetaan start-hetkellä)
         ccGLWindowInterface          *m_workingGLWindow;
 
-        // "Lukitse näkymä" -tila
+        // Lukittu valintajoukko (otetaan snapshotina kun "Näytä valinta" aktivoituu)
         std::unordered_set<unsigned>  m_lockedIndices;          // snapshot lukitushetkellä
         std::map<unsigned, int>       m_preLockedHitCount;      // m_indexHitCount ennen lukitusta
         size_t                        m_preLockedPrismCount;    // prismojen määrä ennen lukitusta
