@@ -933,7 +933,8 @@ namespace MaastoPlugin
                     m_selectionIndices.begin(), m_selectionIndices.end() );
 
                 // Avaa ensin View 2 -ikkuna (tarvitaan ennen highlight-kopiointia)
-                enableShowOnlyMode();
+                // resetCamera=true: sovitetaan kamera aina uuteen valintaan
+                enableShowOnlyMode( /*resetCamera=*/true );
 
                 // Korostetaan lukitun joukon pisteet ja synkataan View 2:een
                 removeHighlightObjects();
@@ -2033,7 +2034,7 @@ namespace MaastoPlugin
     // enableShowOnlyMode
     // ----------------------------------------------------------------
 
-    void MaastoDialog::enableShowOnlyMode()
+    void MaastoDialog::enableShowOnlyMode( bool resetCamera )
     {
         if ( !m_cloud )
             return;
@@ -2209,8 +2210,9 @@ namespace MaastoPlugin
             m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
             m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
             m_selectionGLWidget->show();
-            // zoomGlobal vain ensimmäisellä kerralla — päivityksessä säilytetään käyttäjän asettama kameranäkymä
-            if ( !windowAlreadyExisted )
+            // zoomGlobal ensimmäisellä kerralla tai kun uusi valinta ladataan (resetCamera=true)
+            // Päivityksissä (show-filtterin muutos jne.) kameranäkymä säilytetään
+            if ( !windowAlreadyExisted || resetCamera )
                 m_selectionGLWindow->zoomGlobal();
             // Synkronoi prisma-kopiot View 2:een
             syncMeshesToSelectionWindow();

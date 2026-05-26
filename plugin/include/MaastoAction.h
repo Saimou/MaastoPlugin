@@ -80,7 +80,7 @@ namespace MaastoPlugin
         void clearSelection();
 
         // "Näytä vain valinta" -tila
-        void enableShowOnlyMode();
+        void enableShowOnlyMode( bool resetCamera = false );
         void disableShowOnlyMode();
         void removeSelectionOnlyCloud();
 
