@@ -2499,6 +2499,7 @@ namespace MaastoPlugin
                 // Lukitustilassa: ei prismavalintaa, mutta säilytetään lukittu näkymä
                 // selectionOnlyCloud rakennetaan m_lockedIndices:stä (highlight on tyhjä)
                 enableShowOnlyMode();
+                syncHighlightsToSelectionWindow();
                 m_cloud->prepareDisplayForRefresh_recursive();
                 m_appInterface->refreshAll();
                 return;
@@ -2527,6 +2528,10 @@ namespace MaastoPlugin
         {
             if ( m_showOnlyButton )
                 m_showOnlyButton->setEnabled( !m_indexHitCount.empty() );
+            // View 2: palautetaan valintapilvi näkyviin ilman korostuksia
+            if ( m_showOnlyMode )
+                enableShowOnlyMode();
+            syncHighlightsToSelectionWindow();  // tyhjentää kopiot (m_highlightObjects on tyhjä)
             m_cloud->prepareDisplayForRefresh_recursive();
             m_appInterface->refreshAll();
             return;
