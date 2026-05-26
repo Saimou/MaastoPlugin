@@ -28,6 +28,7 @@ class ccGLWindowInterface;
 class ccPickingHub;
 class ccPointCloud;
 class ccHObject;
+class ccMesh;
 
 namespace MaastoPlugin
 {
@@ -123,6 +124,11 @@ namespace MaastoPlugin
         void syncHighlightsToSelectionWindow();
         // Poistaa View 2 -ikkunan highlight-kopiot
         void clearSelectionHighlights();
+
+        // Synkronoi prisma-kopiot View 2 -ikkunaan (m_selectionWindowPrismOffset:sta eteenpäin)
+        void syncMeshesToSelectionWindow();
+        // Poistaa View 2 -ikkunan prisma-kopiot
+        void clearSelectionMeshes();
 
         // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
         // dlg: jos != nullptr, päivitetään myös dialogin widgetit
@@ -231,6 +237,10 @@ namespace MaastoPlugin
         std::vector<ccHObject*>   m_highlightObjects;
         // Kopiot highlight-pilveistä View 2 -ikkunaan (oma elinkaari, ei globaalissa DB:ssä)
         std::vector<ccHObject*>   m_selectionHighlightObjects;
+        // Kopiot prismoista View 2 -ikkunaan (oma elinkaari, ei globaalissa DB:ssä)
+        std::vector<ccHObject*>   m_selectionMeshObjects;
+        // Prismaindeksiraja: prismat [0, offset) eivät näy View 2:ssa (luotu ennen näkymää)
+        size_t                    m_selectionWindowPrismOffset;
 
         // "Näytä valinta" -tila
         bool                          m_showOnlyMode;           // onko tila päällä

@@ -126,8 +126,10 @@ namespace MaastoPlugin
                 m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
             if ( m_selectionWindowIsOwned && m_selectionGLWidget )
             {
-                // Puhdista highlight-kopiot ennen ikkunan tuhoamista
+                // Puhdista kopiot ennen ikkunan tuhoamista
                 m_selectionHighlightObjects.clear();
+                m_selectionMeshObjects.clear();
+                m_selectionWindowPrismOffset = 0;
                 if ( m_selectionOnlyCloud )
                 {
                     m_selectionOnlyCloud->setDisplay( nullptr );
@@ -295,6 +297,7 @@ namespace MaastoPlugin
         , m_selectionGLWidget( nullptr )
         , m_workingGLWindow( nullptr )
         , m_preLockedPrismCount( 0 )
+        , m_selectionWindowPrismOffset( 0 )
         , m_drawLineButton( nullptr )
         , m_lineAxisComboBox( nullptr )
         , m_lineThicknessSpinBox( nullptr )
@@ -1047,6 +1050,20 @@ namespace MaastoPlugin
                 {
                     m_appInterface->addToDB( mesh );
                     m_meshObjects.push_back( mesh );
+
+                    // Jos View 2 on auki ja tämä prisma on rajan jälkeen, lisätään kopio View 2:een
+                    if ( m_selectionGLWindow && m_selectionWindowIsOwned
+                         && m_meshObjects.size() > m_selectionWindowPrismOffset )
+                    {
+                        ccMesh *copy = mesh->cloneMesh();
+                        if ( copy )
+                        {
+                            copy->setDisplay( m_selectionGLWindow );
+                            m_selectionGLWindow->addToOwnDB( copy, true );
+                            m_selectionMeshObjects.push_back( copy );
+                            m_selectionGLWindow->redraw();
+                        }
+                    }
 
                     // Tallenna prisman data uudelleenlaskentaa varten
                     // (insideIndices täytetään alla lasketuista indekseistä)
@@ -1944,7 +1961,9 @@ namespace MaastoPlugin
             }
         }
 
-        // 2. Poista kaikki prism-meshit DB:stä
+        // 2. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
+        clearSelectionMeshes();
+        m_selectionWindowPrismOffset = 0;
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
         m_meshObjects.clear();
@@ -2104,8 +2123,10 @@ namespace MaastoPlugin
                          &ccGLWindowSignalEmitter::aboutToClose,
                          this, [this]( ccGLWindowInterface* )
                 {
-                    // Ensin puhdistetaan highlight-kopiot (ikkuna vielä olemassa tässä vaiheessa)
+                    // Ensin puhdistetaan kopiot (ikkuna vielä olemassa tässä vaiheessa)
                     m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
+                    m_selectionMeshObjects.clear();      // sama
+                    m_selectionWindowPrismOffset = 0;
                     m_selectionGLWindow      = nullptr;
                     m_selectionGLWidget      = nullptr;
                     m_selectionOnlyCloud     = nullptr;
@@ -2130,6 +2151,30 @@ namespace MaastoPlugin
                     m_preLockedPrismCount = 0;
                     m_appInterface->refreshAll();
                 } );
+
+                // Poimi piste -signaali: välitetään onItemPicked()-callbackiin
+                connect( m_selectionGLWindow->signalEmitter(),
+                         &ccGLWindowSignalEmitter::itemPicked,
+                         this, [this]( ccHObject* entity, unsigned subEntityID,
+                                       int x, int y,
+                                       const CCVector3& P, const CCVector3d& uvw )
+                {
+                    if ( !m_pickPointButton || !m_pickPointButton->isChecked() )
+                        return;
+                    ccPickingListener::PickedItem pi;
+                    pi.entity     = entity;
+                    pi.itemIndex  = subEntityID;
+                    pi.clickPoint = QPoint( x, y );
+                    pi.P3D        = P;
+                    pi.uvw        = uvw;
+                    onItemPicked( pi );
+                } );
+
+                // Aktivoidaan point-picking View 2 -ikkunaan
+                m_selectionGLWindow->setPickingMode( ccGLWindowInterface::POINT_PICKING );
+
+                // Tallennetaan prismaraja: kaikki tähän mennessä olevat prismat eivät näy View 2:ssa
+                m_selectionWindowPrismOffset = m_meshObjects.size();
             }
             else
             {
@@ -2145,6 +2190,8 @@ namespace MaastoPlugin
             // zoomGlobal vain ensimmäisellä kerralla — päivityksessä säilytetään käyttäjän asettama kameranäkymä
             if ( !windowAlreadyExisted )
                 m_selectionGLWindow->zoomGlobal();
+            // Synkronoi prisma-kopiot View 2:een
+            syncMeshesToSelectionWindow();
             m_selectionGLWindow->redraw();
         }
         else
@@ -2191,8 +2238,10 @@ namespace MaastoPlugin
             if ( m_selectionWindowIsOwned )
             {
                 // MDI-ikkuna — tuhotaan.
-                // Puhdistetaan highlight-kopiot ennen ikkunan tuhoamista
+                // Puhdistetaan kopiot ennen ikkunan tuhoamista
                 m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
+                m_selectionMeshObjects.clear();      // sama
+                m_selectionWindowPrismOffset = 0;
                 // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
                 // ei osoita jo tuhottuun ikkunaan pilven destruktorissa.
                 if ( m_selectionOnlyCloud )
@@ -2414,6 +2463,55 @@ namespace MaastoPlugin
             copy->setDisplay( m_selectionGLWindow );
             m_selectionGLWindow->addToOwnDB( copy, true );
             m_selectionHighlightObjects.push_back( copy );
+        }
+
+        m_selectionGLWindow->redraw();
+    }
+
+    // ----------------------------------------------------------------
+    // clearSelectionMeshes
+    // Poistaa View 2 -ikkunan prisma-kopiot (m_selectionMeshObjects).
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::clearSelectionMeshes()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned )
+        {
+            m_selectionMeshObjects.clear();
+            return;
+        }
+        for ( ccHObject *obj : m_selectionMeshObjects )
+        {
+            m_selectionGLWindow->removeFromOwnDB( obj );
+            delete obj;
+        }
+        m_selectionMeshObjects.clear();
+    }
+
+    // ----------------------------------------------------------------
+    // syncMeshesToSelectionWindow
+    // Luo kopiot prismoista indeksistä m_selectionWindowPrismOffset alkaen
+    // View 2 -ikkunaan (m_selectionMeshObjects).
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::syncMeshesToSelectionWindow()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned )
+            return;
+
+        clearSelectionMeshes();
+
+        for ( size_t i = m_selectionWindowPrismOffset; i < m_meshObjects.size(); ++i )
+        {
+            ccMesh *src = dynamic_cast<ccMesh*>( m_meshObjects[i] );
+            if ( !src )
+                continue;
+            ccMesh *copy = src->cloneMesh();
+            if ( !copy )
+                continue;
+            copy->setDisplay( m_selectionGLWindow );
+            m_selectionGLWindow->addToOwnDB( copy, true );
+            m_selectionMeshObjects.push_back( copy );
         }
 
         m_selectionGLWindow->redraw();
@@ -3546,6 +3644,20 @@ namespace MaastoPlugin
         {
             m_appInterface->addToDB( mesh );
             m_meshObjects.push_back( mesh );
+
+            // Jos View 2 on auki ja tämä prisma on rajan jälkeen, lisätään kopio View 2:een
+            if ( m_selectionGLWindow && m_selectionWindowIsOwned
+                 && m_meshObjects.size() > m_selectionWindowPrismOffset )
+            {
+                ccMesh *copy = mesh->cloneMesh();
+                if ( copy )
+                {
+                    copy->setDisplay( m_selectionGLWindow );
+                    m_selectionGLWindow->addToOwnDB( copy, true );
+                    m_selectionMeshObjects.push_back( copy );
+                    m_selectionGLWindow->redraw();
+                }
+            }
         }
         else
         {
@@ -3728,6 +3840,20 @@ namespace MaastoPlugin
         {
             m_appInterface->addToDB( mesh );
             m_meshObjects.push_back( mesh );
+
+            // Jos View 2 on auki ja tämä prisma on rajan jälkeen, lisätään kopio View 2:een
+            if ( m_selectionGLWindow && m_selectionWindowIsOwned
+                 && m_meshObjects.size() > m_selectionWindowPrismOffset )
+            {
+                ccMesh *copy = mesh->cloneMesh();
+                if ( copy )
+                {
+                    copy->setDisplay( m_selectionGLWindow );
+                    m_selectionGLWindow->addToOwnDB( copy, true );
+                    m_selectionMeshObjects.push_back( copy );
+                    m_selectionGLWindow->redraw();
+                }
+            }
         }
         else
         {
