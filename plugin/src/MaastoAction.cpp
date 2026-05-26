@@ -2334,7 +2334,11 @@ namespace MaastoPlugin
     void MaastoDialog::removeHighlightObjects()
     {
         for ( ccHObject *obj : m_highlightObjects )
+        {
+            if ( m_selectionGLWindow && m_selectionWindowIsOwned )
+                m_selectionGLWindow->removeFromOwnDB( obj );
             m_appInterface->removeFromDB( obj, true );
+        }
         m_highlightObjects.clear();
     }
 
@@ -2382,6 +2386,8 @@ namespace MaastoPlugin
 
         m_cloud->addChild( highlighted );
         m_appInterface->addToDB( highlighted, false, false, false, false );
+        if ( m_selectionGLWindow && m_selectionWindowIsOwned )
+            m_selectionGLWindow->addToOwnDB( highlighted, true );
         m_highlightObjects.push_back( highlighted );
 
         // Päivitä m_selectionIndices jotta enableShowOnlyMode tietää mitkä pisteet ovat valittuja
@@ -2468,6 +2474,8 @@ namespace MaastoPlugin
                 false,  // checkDimensions
                 false   // autoRedraw
             );
+            if ( m_selectionGLWindow && m_selectionWindowIsOwned )
+                m_selectionGLWindow->addToOwnDB( highlighted, true );
             m_highlightObjects.push_back( highlighted );
 
             // Aktivoi nappi kun valittuja pisteitä on — ei lukituksen aikana
