@@ -2077,6 +2077,8 @@ namespace MaastoPlugin
             // --- Erillinen MDI-ikkuna (View 2) ---
             m_selectionWindowIsOwned = true;
 
+            const bool windowAlreadyExisted = ( m_selectionGLWindow != nullptr );
+
             if ( !m_selectionGLWindow )
             {
                 m_appInterface->createGLWindow( m_selectionGLWindow, m_selectionGLWidget );
@@ -2140,7 +2142,9 @@ namespace MaastoPlugin
             m_selectionOnlyCloud->setDisplay( m_selectionGLWindow );
             m_selectionGLWindow->addToOwnDB( m_selectionOnlyCloud, true );
             m_selectionGLWidget->show();
-            m_selectionGLWindow->zoomGlobal();
+            // zoomGlobal vain ensimmäisellä kerralla — päivityksessä säilytetään käyttäjän asettama kameranäkymä
+            if ( !windowAlreadyExisted )
+                m_selectionGLWindow->zoomGlobal();
             m_selectionGLWindow->redraw();
         }
         else
