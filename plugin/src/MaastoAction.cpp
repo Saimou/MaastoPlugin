@@ -2200,9 +2200,9 @@ namespace MaastoPlugin
             }
             else
             {
-                // Ikkuna jo olemassa — poista vanha pilvi
-                if ( m_selectionOnlyCloud )
-                    m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+                // Ikkuna jo olemassa — removeSelectionOnlyCloud() on jo poistanut vanhan pilven
+                // Päivitetään prismaraja uudelle valinnalle
+                m_selectionWindowPrismOffset = m_meshObjects.size();
             }
 
             // Pääpilvi jää näkyviin View 1:ssä — valinta näytetään lisäksi erillisessä ikkunassa
