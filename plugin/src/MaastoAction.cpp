@@ -126,6 +126,8 @@ namespace MaastoPlugin
                 m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
             if ( m_selectionWindowIsOwned && m_selectionGLWidget )
             {
+                // Puhdista highlight-kopiot ennen ikkunan tuhoamista
+                m_selectionHighlightObjects.clear();
                 if ( m_selectionOnlyCloud )
                 {
                     m_selectionOnlyCloud->setDisplay( nullptr );
@@ -925,12 +927,14 @@ namespace MaastoPlugin
                 m_lockedIndices = std::unordered_set<unsigned>(
                     m_selectionIndices.begin(), m_selectionIndices.end() );
 
-                // Korostetaan kaikki lukitun joukon pisteet
+                // Avaa ensin View 2 -ikkuna (tarvitaan ennen highlight-kopiointia)
+                enableShowOnlyMode();
+
+                // Korostetaan lukitun joukon pisteet ja synkataan View 2:een
                 removeHighlightObjects();
                 buildHighlightFromIndices( std::vector<unsigned>(
                     m_lockedIndices.begin(), m_lockedIndices.end() ) );
-
-                enableShowOnlyMode();
+                syncHighlightsToSelectionWindow();
 
                 m_cloud->prepareDisplayForRefresh_recursive();
                 m_appInterface->refreshAll();
@@ -2098,6 +2102,8 @@ namespace MaastoPlugin
                          &ccGLWindowSignalEmitter::aboutToClose,
                          this, [this]( ccGLWindowInterface* )
                 {
+                    // Ensin puhdistetaan highlight-kopiot (ikkuna vielä olemassa tässä vaiheessa)
+                    m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
                     m_selectionGLWindow      = nullptr;
                     m_selectionGLWidget      = nullptr;
                     m_selectionOnlyCloud     = nullptr;
@@ -2181,7 +2187,9 @@ namespace MaastoPlugin
             if ( m_selectionWindowIsOwned )
             {
                 // MDI-ikkuna — tuhotaan.
-                // Deletoidaan pilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
+                // Puhdistetaan highlight-kopiot ennen ikkunan tuhoamista
+                m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
+                // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
                 // ei osoita jo tuhottuun ikkunaan pilven destruktorissa.
                 if ( m_selectionOnlyCloud )
                 {
@@ -2333,13 +2341,78 @@ namespace MaastoPlugin
 
     void MaastoDialog::removeHighlightObjects()
     {
+        clearSelectionHighlights();
         for ( ccHObject *obj : m_highlightObjects )
-        {
-            if ( m_selectionGLWindow && m_selectionWindowIsOwned )
-                m_selectionGLWindow->removeFromOwnDB( obj );
             m_appInterface->removeFromDB( obj, true );
-        }
         m_highlightObjects.clear();
+    }
+
+    // ----------------------------------------------------------------
+    // clearSelectionHighlights
+    // Poistaa View 2 -ikkunan highlight-kopiot (m_selectionHighlightObjects).
+    // Kutsutaan aina ennen uusia kopioita ja removeHighlightObjects():sta.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::clearSelectionHighlights()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned )
+        {
+            m_selectionHighlightObjects.clear();
+            return;
+        }
+        for ( ccHObject *obj : m_selectionHighlightObjects )
+        {
+            m_selectionGLWindow->removeFromOwnDB( obj );
+            delete obj;
+        }
+        m_selectionHighlightObjects.clear();
+    }
+
+    // ----------------------------------------------------------------
+    // syncHighlightsToSelectionWindow
+    // Luo kopiot kaikista m_highlightObjects-pilveistä View 2 -ikkunaan.
+    // Kopioilla on sama geometria ja väri, mutta display = m_selectionGLWindow.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::syncHighlightsToSelectionWindow()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned )
+            return;
+
+        clearSelectionHighlights();
+
+        for ( ccHObject *src : m_highlightObjects )
+        {
+            ccPointCloud *srcCloud = dynamic_cast<ccPointCloud*>( src );
+            if ( !srcCloud )
+                continue;
+
+            ccPointCloud *copy = new ccPointCloud( srcCloud->getName() + "_v2" );
+            if ( !copy->reserve( srcCloud->size() ) )
+            {
+                delete copy;
+                continue;
+            }
+
+            // Kopioi pisteet
+            for ( unsigned i = 0; i < srcCloud->size(); ++i )
+                copy->addPoint( *srcCloud->getPoint( i ) );
+
+            // Kopioi värit
+            if ( srcCloud->hasColors() && copy->reserveTheRGBTable() )
+            {
+                for ( unsigned i = 0; i < srcCloud->size(); ++i )
+                    copy->addColor( srcCloud->getPointColor( i ) );
+                copy->showColors( true );
+            }
+
+            copy->setPointSize( srcCloud->getPointSize() );
+            copy->setDisplay( m_selectionGLWindow );
+            m_selectionGLWindow->addToOwnDB( copy, true );
+            m_selectionHighlightObjects.push_back( copy );
+        }
+
+        m_selectionGLWindow->redraw();
     }
 
     // ----------------------------------------------------------------
@@ -2386,8 +2459,6 @@ namespace MaastoPlugin
 
         m_cloud->addChild( highlighted );
         m_appInterface->addToDB( highlighted, false, false, false, false );
-        if ( m_selectionGLWindow && m_selectionWindowIsOwned )
-            m_selectionGLWindow->addToOwnDB( highlighted, true );
         m_highlightObjects.push_back( highlighted );
 
         // Päivitä m_selectionIndices jotta enableShowOnlyMode tietää mitkä pisteet ovat valittuja
@@ -2474,8 +2545,6 @@ namespace MaastoPlugin
                 false,  // checkDimensions
                 false   // autoRedraw
             );
-            if ( m_selectionGLWindow && m_selectionWindowIsOwned )
-                m_selectionGLWindow->addToOwnDB( highlighted, true );
             m_highlightObjects.push_back( highlighted );
 
             // Aktivoi nappi kun valittuja pisteitä on — ei lukituksen aikana
@@ -2514,6 +2583,9 @@ namespace MaastoPlugin
         // (lukituksen aikana m_selectionIndices on jo suodatettu lukituille pisteille)
         if ( m_showOnlyMode )
             enableShowOnlyMode();
+
+        // Synkronoi highlight-kopiot View 2 -ikkunaan jos se on auki
+        syncHighlightsToSelectionWindow();
 
         // Ei kutsuta updateUI():ta tässä — se triggeröisi onNewSelection() → updateCloud()
         // → populateColorComboBox() → applyColorField() → updateUI() silmukan

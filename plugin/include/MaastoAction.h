@@ -119,6 +119,11 @@ namespace MaastoPlugin
         // Poistaa aiemman pick-korostuspisteen
         void removePickMarker();
 
+        // Synkronoi highlight-pilvet View 2 -ikkunaan (luo kopiot m_selectionHighlightObjects)
+        void syncHighlightsToSelectionWindow();
+        // Poistaa View 2 -ikkunan highlight-kopiot
+        void clearSelectionHighlights();
+
         // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
         // dlg: jos != nullptr, päivitetään myös dialogin widgetit
         void loadSettingsFromFile( const QString &path,
@@ -224,6 +229,8 @@ namespace MaastoPlugin
         std::vector<ccHObject*>   m_meshObjects;
         std::vector<PrismData>    m_prismData;
         std::vector<ccHObject*>   m_highlightObjects;
+        // Kopiot highlight-pilveistä View 2 -ikkunaan (oma elinkaari, ei globaalissa DB:ssä)
+        std::vector<ccHObject*>   m_selectionHighlightObjects;
 
         // "Näytä valinta" -tila
         bool                          m_showOnlyMode;           // onko tila päällä
