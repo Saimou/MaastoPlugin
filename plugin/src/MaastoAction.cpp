@@ -1902,29 +1902,7 @@ namespace MaastoPlugin
 
     void MaastoDialog::clearSelection()
     {
-        // Lukitustilassa: poistetaan vain lukituksen aikana lisätyt prismat.
-        // Alkuperäiset prismat, lukitustila ja showOnly säilyvät.
-        if ( m_lockViewMode )
-        {
-            for ( size_t i = m_preLockedPrismCount; i < m_meshObjects.size(); ++i )
-                m_appInterface->removeFromDB( m_meshObjects[i], true );
-            if ( m_meshObjects.size() > m_preLockedPrismCount )
-            {
-                m_meshObjects.erase(
-                    m_meshObjects.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
-                    m_meshObjects.end() );
-                m_prismData.erase(
-                    m_prismData.begin() + static_cast<ptrdiff_t>( m_preLockedPrismCount ),
-                    m_prismData.end() );
-            }
-            // Palautetaan alkuperäinen hit-count (lukituksen aikaiset prismat pois)
-            m_indexHitCount = m_preLockedHitCount;
-            // Päivitä highlight lukituilla pisteillä
-            refreshHighlights();
-            return;
-        }
-
-        // 1. Jos "Näytä vain valinta" on päällä, pura tila ensin
+        // 1. Jos "Näytä valinta" on päällä, pura tila ensin
         if ( m_showOnlyMode )
         {
             m_lockViewMode = false;
