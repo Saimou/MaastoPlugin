@@ -932,10 +932,17 @@ namespace MaastoPlugin
                 m_lockedIndices = std::unordered_set<unsigned>(
                     m_selectionIndices.begin(), m_selectionIndices.end() );
 
-                // Jos View 2 on jo auki, suljetaan se ensin jotta OwnDB on puhdas
-                // ennen uuden valinnan lataamista
-                if ( m_selectionWindowIsOwned )
-                    disableShowOnlyMode();
+                // Jos View 2 on jo auki, tyhjennetään sen OwnDB suoraan
+                // (ei kutsuta disableShowOnlyMode() jotta vältytään refreshAll()-sivuvaikutuksilta
+                // ja ikkunan sulkemis/avaamissykliltä joka aiheuttaa koordinaattivirheen)
+                if ( m_selectionWindowIsOwned && m_selectionGLWindow )
+                {
+                    clearSelectionHighlights();
+                    clearSelectionMeshes();
+                    clearSelectionSizeSubClouds();
+                    removeSelectionOnlyCloud();
+                    // m_selectionGLWindow jää auki, windowAlreadyExisted=true enableShowOnlyMode():ssa
+                }
 
                 // Avaa View 2 -ikkuna uudelle valinnalle
                 enableShowOnlyMode( /*resetCamera=*/true );
