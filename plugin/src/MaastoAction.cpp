@@ -37,6 +37,7 @@
 #include <QIcon>
 #include <QMap>
 #include <map>
+#include <unordered_map>
 #include <QSet>
 #include <QStringList>
 #include <algorithm>
@@ -129,6 +130,7 @@ namespace MaastoPlugin
                 // Puhdista kopiot ennen ikkunan tuhoamista
                 m_selectionHighlightObjects.clear();
                 m_selectionMeshObjects.clear();
+                m_selectionSizeSubClouds.clear();
                 m_selectionWindowPrismOffset = 0;
                 if ( m_selectionOnlyCloud )
                 {
@@ -1806,6 +1808,9 @@ namespace MaastoPlugin
 
         m_cloud->prepareDisplayForRefresh_recursive();
         m_appInterface->refreshAll();
+
+        // Päivitä View 2 jos auki
+        refreshSelectionWindow();
     }
 
     // ----------------------------------------------------------------
@@ -1963,6 +1968,7 @@ namespace MaastoPlugin
 
         // 2. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
         clearSelectionMeshes();
+        clearSelectionSizeSubClouds();
         m_selectionWindowPrismOffset = 0;
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
@@ -2036,7 +2042,20 @@ namespace MaastoPlugin
         if ( m_lockedIndices.empty() )
             return;
 
-        const std::vector<unsigned> lockedVec( m_lockedIndices.begin(), m_lockedIndices.end() );
+        // Lähdeindeksit: m_lockedIndices, suodatettuna piilotettujen pisteiden varalta
+        // (m_cloud:n visibility array asettaa POINT_HIDDEN pisteille jotka on piilotettu Show-filtterillä)
+        std::vector<unsigned> lockedVec;
+        {
+            const bool hasVisArray = ( m_cloud->getTheVisibilityArray().size() == m_cloud->size() );
+            lockedVec.reserve( m_lockedIndices.size() );
+            for ( unsigned idx : m_lockedIndices )
+            {
+                if ( hasVisArray &&
+                     m_cloud->getTheVisibilityArray()[idx] == CCCoreLib::POINT_HIDDEN )
+                    continue;
+                lockedVec.push_back( idx );
+            }
+        }
         const std::vector<unsigned> *srcIndices = &lockedVec;
 
         // 1. Poista vanha väliaikainen pilvi jos on
@@ -2045,10 +2064,12 @@ namespace MaastoPlugin
         // 2. Rakenna uusi valintapilvi srcIndices:stä
         const unsigned count = static_cast<unsigned>( srcIndices->size() );
         m_selectionOnlyCloud = new ccPointCloud( "SelectionOnly" );
-        if ( !m_selectionOnlyCloud->reserve( count ) )
+        if ( count == 0 || !m_selectionOnlyCloud->reserve( count ) )
         {
             delete m_selectionOnlyCloud;
             m_selectionOnlyCloud = nullptr;
+            if ( count == 0 )
+                return; // kaikki piilotettu — näytetään tyhjä View 2
             return;
         }
 
@@ -2126,6 +2147,7 @@ namespace MaastoPlugin
                     // Ensin puhdistetaan kopiot (ikkuna vielä olemassa tässä vaiheessa)
                     m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
                     m_selectionMeshObjects.clear();      // sama
+                    m_selectionSizeSubClouds.clear();    // sama
                     m_selectionWindowPrismOffset = 0;
                     m_selectionGLWindow      = nullptr;
                     m_selectionGLWidget      = nullptr;
@@ -2241,6 +2263,7 @@ namespace MaastoPlugin
                 // Puhdistetaan kopiot ennen ikkunan tuhoamista
                 m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
                 m_selectionMeshObjects.clear();      // sama
+                m_selectionSizeSubClouds.clear();    // sama
                 m_selectionWindowPrismOffset = 0;
                 // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
                 // ei osoita jo tuhottuun ikkunaan pilven destruktorissa.
@@ -2515,6 +2538,136 @@ namespace MaastoPlugin
         }
 
         m_selectionGLWindow->redraw();
+    }
+
+    // ----------------------------------------------------------------
+    // clearSelectionSizeSubClouds
+    // Poistaa View 2 -ikkunan luokkakohtaiset pistekoko-sub-pilvet.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::clearSelectionSizeSubClouds()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned )
+        {
+            m_selectionSizeSubClouds.clear();
+            return;
+        }
+        for ( ccHObject *obj : m_selectionSizeSubClouds )
+        {
+            m_selectionGLWindow->removeFromOwnDB( obj );
+            delete obj;
+        }
+        m_selectionSizeSubClouds.clear();
+    }
+
+    // ----------------------------------------------------------------
+    // syncSizeSubCloudsToSelectionWindow
+    // Luo kopiot m_sizeSubClouds-pilveistä View 2 -ikkunaan, suodatettuna
+    // m_lockedIndices:n pisteisiin.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::syncSizeSubCloudsToSelectionWindow()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned || !m_cloud )
+            return;
+
+        clearSelectionSizeSubClouds();
+
+        if ( m_sizeSubClouds.isEmpty() )
+            return;
+
+        // Rakennetaan käänteinen hakutaulukko: pääpilven globaaliindeksi → selectionOnly-indeksi
+        // m_lockedIndices sisältää pääpilven indeksit järjestyksessä jolla ne lisättiin
+        // m_selectionOnlyCloud:iin (sama järjestys kuin enableShowOnlyMode():ssa)
+        std::unordered_map<unsigned, unsigned> globalToLocal;
+        {
+            unsigned localIdx = 0;
+            for ( unsigned globalIdx : m_lockedIndices )
+                globalToLocal[globalIdx] = localIdx++;
+        }
+
+        const int sfIdx = m_cloud->getScalarFieldIndexByName( "Classification" );
+
+        for ( auto it = m_sizeSubClouds.constBegin(); it != m_sizeSubClouds.constEnd(); ++it )
+        {
+            const int classCode = it.key();
+            ccPointCloud *srcSub = it.value();
+            if ( !srcSub )
+                continue;
+
+            // Kerää m_lockedIndices:stä ne pisteet joiden luokka == classCode
+            std::vector<unsigned> localIndices;
+            if ( sfIdx >= 0 )
+            {
+                ccScalarField *sf = static_cast<ccScalarField*>( m_cloud->getScalarField( sfIdx ) );
+                const float targetVal = static_cast<float>( classCode );
+                for ( unsigned globalIdx : m_lockedIndices )
+                {
+                    if ( sf->getValue( globalIdx ) == targetVal )
+                    {
+                        auto found = globalToLocal.find( globalIdx );
+                        if ( found != globalToLocal.end() )
+                            localIndices.push_back( found->second );
+                    }
+                }
+            }
+
+            if ( localIndices.empty() || !m_selectionOnlyCloud )
+                continue;
+
+            ccPointCloud *copy = new ccPointCloud(
+                srcSub->getName() + "_v2" );
+            if ( !copy->reserve( static_cast<unsigned>( localIndices.size() ) ) )
+            {
+                delete copy;
+                continue;
+            }
+
+            // Kopioi pisteet m_selectionOnlyCloud:sta (ne ovat jo lokaalissa koordinaatistossa)
+            for ( unsigned localIdx : localIndices )
+                copy->addPoint( *m_selectionOnlyCloud->getPoint( localIdx ) );
+
+            // Kopioi väri srcSub:lta (yhtenäinen luokkaväri tai SF)
+            if ( srcSub->hasColors() && copy->reserveTheRGBTable() )
+            {
+                // Käytä srcSub:n ensimmäisen pisteen väriä (kaikki samaa luokkaa)
+                if ( srcSub->size() > 0 )
+                {
+                    const ccColor::Rgba col = srcSub->getPointColor( 0 );
+                    for ( unsigned i = 0; i < static_cast<unsigned>( localIndices.size() ); ++i )
+                        copy->addColor( col );
+                }
+                copy->showColors( true );
+                copy->showSF( false );
+            }
+
+            copy->setPointSize( srcSub->getPointSize() );
+            copy->setVisible( srcSub->isVisible() );
+            copy->setDisplay( m_selectionGLWindow );
+            m_selectionGLWindow->addToOwnDB( copy, true );
+            m_selectionSizeSubClouds.push_back( copy );
+        }
+
+        m_selectionGLWindow->redraw();
+    }
+
+    // ----------------------------------------------------------------
+    // refreshSelectionWindow
+    // Päivittää View 2 -ikkunan sisällön kun show/koko-tila muuttuu:
+    // rakennetaan m_selectionOnlyCloud uudelleen ja synkronoidaan kaikki kopiot.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::refreshSelectionWindow()
+    {
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned || !m_showOnlyMode )
+            return;
+
+        // Rakennetaan valintapilvi uudelleen (ottaa huomioon visibility arrayn)
+        enableShowOnlyMode();
+
+        // Synkronoi highlight- ja sub-pilvi-kopiot
+        syncHighlightsToSelectionWindow();
+        syncSizeSubCloudsToSelectionWindow();
     }
 
     // ----------------------------------------------------------------
@@ -2934,6 +3087,9 @@ namespace MaastoPlugin
         m_appInterface->updateUI();
         m_updatingCloud = false;
         m_appInterface->refreshAll();
+
+        // Päivitä View 2 jos auki
+        refreshSelectionWindow();
     }
 
     // ----------------------------------------------------------------
@@ -2959,6 +3115,7 @@ namespace MaastoPlugin
             m_cloud->unallocateVisibilityArray();
             m_cloud->prepareDisplayForRefresh();
             m_appInterface->refreshAll();
+            refreshSelectionWindow();
         }
         else if ( subCloudChanged )
         {
@@ -2966,6 +3123,7 @@ namespace MaastoPlugin
             m_appInterface->updateUI();
             m_updatingCloud = false;
             m_appInterface->refreshAll();
+            refreshSelectionWindow();
         }
     }
 

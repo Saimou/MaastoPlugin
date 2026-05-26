@@ -130,6 +130,15 @@ namespace MaastoPlugin
         // Poistaa View 2 -ikkunan prisma-kopiot
         void clearSelectionMeshes();
 
+        // Synkronoi luokkakohtaiset pistekoko-sub-pilvet View 2 -ikkunaan
+        void syncSizeSubCloudsToSelectionWindow();
+        // Poistaa View 2 -ikkunan pistekoko-sub-pilvienkopiot
+        void clearSelectionSizeSubClouds();
+
+        // Päivittää View 2 -ikkunan sisällön (valintapilvi + highlight + sub-pilvet)
+        // Kutsutaan aina kun show-filtterin tai pistekoon tila muuttuu
+        void refreshSelectionWindow();
+
         // Lataa asetukset suoraan tiedostopolusta (ei tiedostoselaindialogeja)
         // dlg: jos != nullptr, päivitetään myös dialogin widgetit
         void loadSettingsFromFile( const QString &path,
@@ -241,6 +250,8 @@ namespace MaastoPlugin
         std::vector<ccHObject*>   m_selectionMeshObjects;
         // Prismaindeksiraja: prismat [0, offset) eivät näy View 2:ssa (luotu ennen näkymää)
         size_t                    m_selectionWindowPrismOffset;
+        // Kopiot luokkakohtaisista pistekoko-sub-pilveistä View 2 -ikkunaan
+        std::vector<ccHObject*>   m_selectionSizeSubClouds;
 
         // "Näytä valinta" -tila
         bool                          m_showOnlyMode;           // onko tila päällä
