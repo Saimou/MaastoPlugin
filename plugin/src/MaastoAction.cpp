@@ -119,15 +119,24 @@ namespace MaastoPlugin
             for ( ccHObject *obj : m_highlightObjects )
                 obj->setVisible( true );
         }
-        // Sulje MDI-ikkuna siististi
+        // Sulje MDI-ikkuna siististi (vain jos omistamme sen)
         if ( m_selectionGLWindow )
         {
             if ( m_selectionOnlyCloud )
                 m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
-            m_selectionGLWidget->hide();
-            m_appInterface->destroyGLWindow( m_selectionGLWindow );
+            if ( m_selectionWindowIsOwned && m_selectionGLWidget )
+            {
+                if ( m_selectionOnlyCloud )
+                {
+                    m_selectionOnlyCloud->setDisplay( nullptr );
+                    delete m_selectionOnlyCloud;
+                    m_selectionOnlyCloud = nullptr;
+                }
+                m_selectionGLWidget->hide();
+                m_appInterface->destroyGLWindow( m_selectionGLWindow );
+                m_selectionGLWidget = nullptr;
+            }
             m_selectionGLWindow = nullptr;
-            m_selectionGLWidget = nullptr;
         }
         removeSelectionOnlyCloud();
 
@@ -1902,14 +1911,13 @@ namespace MaastoPlugin
 
     void MaastoDialog::clearSelection()
     {
-        // 1. Jos "Näytä valinta" on päällä, pura tila ensin
+        // 1. Jos "Näytä valinta" on päällä, pura tila
         if ( m_showOnlyMode )
         {
             m_lockViewMode = false;
             m_lockedIndices.clear();
             m_preLockedHitCount.clear();
             m_preLockedPrismCount = 0;
-            disableShowOnlyMode();
             m_showOnlyMode = false;
             if ( m_showOnlyButton )
             {
@@ -1917,6 +1925,18 @@ namespace MaastoPlugin
                 m_showOnlyButton->setChecked( false );
                 m_showOnlyButton->blockSignals( false );
                 m_showOnlyButton->setEnabled( false );
+            }
+
+            if ( m_selectionWindowIsOwned )
+            {
+                // Checkbox ON: MDI-ikkuna jää auki — View 2 näyttää valitut pisteet edelleen.
+                // Ei kutsuta disableShowOnlyMode(). Pääpilvi oli jo näkyvissä, ei tarvita palauttamista.
+                // (disableShowOnlyMode() kutsutaan vasta kun nappia painetaan uudelleen)
+            }
+            else
+            {
+                // Checkbox OFF: pääpilvi oli piilotettu View 1:ssä — palautetaan näkyviin
+                disableShowOnlyMode();
             }
         }
 
@@ -2160,7 +2180,15 @@ namespace MaastoPlugin
 
             if ( m_selectionWindowIsOwned )
             {
-                // MDI-ikkuna — tuhotaan
+                // MDI-ikkuna — tuhotaan.
+                // Deletoidaan pilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
+                // ei osoita jo tuhottuun ikkunaan pilven destruktorissa.
+                if ( m_selectionOnlyCloud )
+                {
+                    m_selectionOnlyCloud->setDisplay( nullptr );
+                    delete m_selectionOnlyCloud;
+                    m_selectionOnlyCloud = nullptr;
+                }
                 m_selectionGLWidget->hide();
                 m_appInterface->destroyGLWindow( m_selectionGLWindow );
                 m_selectionGLWidget = nullptr;
@@ -2171,7 +2199,7 @@ namespace MaastoPlugin
             m_selectionWindowIsOwned = false;
         }
 
-        // Poista väliaikainen pilvi (ikkuna-osoitin on jo nollattu, ei yritetä poistaa uudelleen)
+        // Poista väliaikainen pilvi jos vielä olemassa (View 1 -tapaus tai yllä ei deletoitu)
         removeSelectionOnlyCloud();
 
         // Palauta pääpilvi näkyviin
