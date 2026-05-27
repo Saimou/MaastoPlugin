@@ -1981,6 +1981,7 @@ namespace MaastoPlugin
         // 2. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
         clearSelectionMeshes();
         clearSelectionSizeSubClouds();
+        removeSelectionOnlyCloud();   // poistaa vanhan valintapilven View 2:sta
         m_selectionWindowPrismOffset = 0;
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
@@ -2212,9 +2213,13 @@ namespace MaastoPlugin
             }
             else
             {
-                // Ikkuna jo olemassa — removeSelectionOnlyCloud() on jo poistanut vanhan pilven
-                // Päivitetään prismaraja uudelle valinnalle
-                m_selectionWindowPrismOffset = m_meshObjects.size();
+                // Ikkuna jo olemassa — removeSelectionOnlyCloud() on jo poistanut vanhan pilven.
+                // Päivitetään prismaraja vain jos clearSelection() ei ole jo nollannut sitä:
+                // clearSelection() tyhjentää m_meshObjects -> size()==0 -> offset pysyy 0 -> kaikki
+                // uuden valinnan prismat kopioidaan. Jos päivitetään sama valinta (ilman
+                // clearSelection():ia), m_meshObjects ei ole tyhjä ja offset asetetaan oikein.
+                if ( !m_meshObjects.empty() )
+                    m_selectionWindowPrismOffset = m_meshObjects.size();
             }
 
             // Pääpilvi jää näkyviin View 1:ssä — valinta näytetään lisäksi erillisessä ikkunassa
