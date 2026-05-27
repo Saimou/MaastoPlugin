@@ -255,18 +255,35 @@ ccMesh* VolumeBuilder::build( const std::vector<PolygonDrawer::Point2D>& polygon
     for ( const auto& w : walls )
         addClippedPolygon( cloud, mesh, w.poly, false );
 
-    // ---- Vertex-värit ----
-    if ( cloud->reserveTheRGBTable() )
+    // ---- Vertex-värit + läpinäkyvyys ----
+    // Stippling kytketään päälle kun opacity > 0, jotta prisma on läpinäkyvä
+    // kaikista katsontasuunnista (pelkkä vertex-alfa ei toimi depth-bufferin takia).
+    // Vertex-alfa säilyy stipplingin tukena: se vaikuttaa näkyvien pikseleiden
+    // kirkkauteen ja antaa lisää säätövaraa opacity-arvolle.
+    //   opacity = 0   → täysin läpinäkymätön, stippling pois
+    //   opacity 1–99  → stippling päällä, vertex-alfa (100-opacity)*255/100
+    //   opacity = 100 → mesh piilotetaan
     {
         const int clampedOpacity = std::max( 0, std::min( 100, opacity ) );
         const ColorCompType r = 200, g = 200, b = 200;
-        const ColorCompType a = static_cast<ColorCompType>( ( 100 - clampedOpacity ) * 255 / 100 );
-        for ( unsigned i = 0; i < cloud->size(); ++i )
-            cloud->addColor( r, g, b, a );
-        cloud->showColors( true );
+        const ColorCompType a = ( clampedOpacity == 0 )
+            ? static_cast<ColorCompType>( 255 )
+            : static_cast<ColorCompType>( ( 100 - clampedOpacity ) * 255 / 100 );
+
+        if ( cloud->reserveTheRGBTable() )
+        {
+            for ( unsigned i = 0; i < cloud->size(); ++i )
+                cloud->addColor( r, g, b, a );
+            cloud->showColors( true );
+        }
+
+        if ( clampedOpacity == 100 )
+            mesh->setVisible( false );
+        else if ( clampedOpacity > 0 )
+            mesh->enableStippling( true );
     }
 
-    // ---- Normaaleille ----
+    // ---- Normaalit ----
     mesh->computeNormals( true );
     mesh->showColors( true );
 
@@ -468,14 +485,22 @@ ccMesh* VolumeBuilder::buildFromLine( const CCVector3& p1,
     for ( int i = 0; i < 8; ++i )
         cloud->addPoint( CCVector3::fromArray( verts[i].u ) );
 
-    if ( cloud->reserveTheRGBTable() )
+    // Vertex-värit + läpinäkyvyys (sama logiikka kuin build()-funktiossa)
     {
         const int clampedOpacity = std::max( 0, std::min( 100, opacity ) );
         const ColorCompType r = 200, g = 200, b = 200;
-        const ColorCompType a = static_cast<ColorCompType>( ( 100 - clampedOpacity ) * 255 / 100 );
-        for ( unsigned i = 0; i < 8; ++i )
-            cloud->addColor( r, g, b, a );
-        cloud->showColors( true );
+        const ColorCompType a = ( clampedOpacity == 0 )
+            ? static_cast<ColorCompType>( 255 )
+            : static_cast<ColorCompType>( ( 100 - clampedOpacity ) * 255 / 100 );
+
+        if ( cloud->reserveTheRGBTable() )
+        {
+            for ( unsigned i = 0; i < 8; ++i )
+                cloud->addColor( r, g, b, a );
+            cloud->showColors( true );
+        }
+
+        // Stippling ja visibility asetetaan meshin luonnin jälkeen (alla)
     }
 
     // 12 kolmiota (6 tahkoa × 2)
@@ -509,6 +534,15 @@ ccMesh* VolumeBuilder::buildFromLine( const CCVector3& p1,
 
     mesh->computeNormals( true );
     mesh->showColors( true );
+
+    // Stippling + visibility opacity-arvon mukaan
+    {
+        const int clampedOpacity = std::max( 0, std::min( 100, opacity ) );
+        if ( clampedOpacity == 100 )
+            mesh->setVisible( false );
+        else if ( clampedOpacity > 0 )
+            mesh->enableStippling( true );
+    }
 
     ++s_lineCounter;
     mesh->setName( QString( "MaastoLineVolume_%1" ).arg( s_lineCounter ) );
