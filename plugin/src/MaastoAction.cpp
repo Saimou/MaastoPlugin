@@ -1065,8 +1065,10 @@ namespace MaastoPlugin
                     m_appInterface->addToDB( mesh );
                     m_meshObjects.push_back( mesh );
 
-                    // Jos View 2 on auki ja tämä prisma on rajan jälkeen, lisätään kopio View 2:een
+                    // Jos View 2 on auki, "Näytä valinta" on aktiivinen ja tämä prisma on
+                    // rajan jälkeen, lisätään kopio View 2:een
                     if ( m_selectionGLWindow && m_selectionWindowIsOwned
+                         && m_showOnlyMode
                          && m_meshObjects.size() > m_selectionWindowPrismOffset )
                     {
                         ccMesh *copy = mesh->cloneMesh();
@@ -3821,8 +3823,10 @@ namespace MaastoPlugin
             m_appInterface->addToDB( mesh );
             m_meshObjects.push_back( mesh );
 
-            // Jos View 2 on auki ja tämä prisma on rajan jälkeen, lisätään kopio View 2:een
+            // Jos View 2 on auki, "Näytä valinta" on aktiivinen ja tämä prisma on
+            // rajan jälkeen, lisätään kopio View 2:een
             if ( m_selectionGLWindow && m_selectionWindowIsOwned
+                 && m_showOnlyMode
                  && m_meshObjects.size() > m_selectionWindowPrismOffset )
             {
                 ccMesh *copy = mesh->cloneMesh();
@@ -4017,8 +4021,10 @@ namespace MaastoPlugin
             m_appInterface->addToDB( mesh );
             m_meshObjects.push_back( mesh );
 
-            // Jos View 2 on auki ja tämä prisma on rajan jälkeen, lisätään kopio View 2:een
+            // Jos View 2 on auki, "Näytä valinta" on aktiivinen ja tämä prisma on
+            // rajan jälkeen, lisätään kopio View 2:een
             if ( m_selectionGLWindow && m_selectionWindowIsOwned
+                 && m_showOnlyMode
                  && m_meshObjects.size() > m_selectionWindowPrismOffset )
             {
                 ccMesh *copy = mesh->cloneMesh();
