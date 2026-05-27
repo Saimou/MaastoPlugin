@@ -2682,10 +2682,10 @@ namespace MaastoPlugin
         if ( !m_selectionGLWindow || !m_selectionWindowIsOwned || !m_showOnlyMode )
             return;
 
-        // Rakennetaan valintapilvi uudelleen (ottaa huomioon visibility arrayn)
-        enableShowOnlyMode();
-
-        // Synkronoi highlight- ja sub-pilvi-kopiot
+        // EI rakenneta m_selectionOnlyCloud:ia uudelleen — View 2:n pistepilvi kiinnitetään
+        // "Näytä valinta" -napin painamisen hetkeen. Value-valinnat, pistekoot ja
+        // show-filtteri eivät muuta View 2:n pistepilveä.
+        // Päivitetään vain highlight- ja sub-pilvi-kopiot.
         syncHighlightsToSelectionWindow();
         syncSizeSubCloudsToSelectionWindow();
     }
@@ -2803,9 +2803,7 @@ namespace MaastoPlugin
         {
             if ( m_showOnlyButton )
                 m_showOnlyButton->setEnabled( !m_indexHitCount.empty() );
-            // View 2: palautetaan valintapilvi näkyviin ilman korostuksia
-            if ( m_showOnlyMode )
-                enableShowOnlyMode();
+            // View 2: poistetaan vain keltaiset highlight-kopiot — pistepilvi pysyy ennallaan
             syncHighlightsToSelectionWindow();  // tyhjentää kopiot (m_highlightObjects on tyhjä)
             m_cloud->prepareDisplayForRefresh_recursive();
             m_appInterface->refreshAll();
@@ -2859,11 +2857,7 @@ namespace MaastoPlugin
             }
         }
 
-        // Jos "Näytä vain valinta" on päällä, aktivoi uudelleen päivitetyillä pisteillä
-        // (lukituksen aikana m_selectionIndices on jo suodatettu lukituille pisteille)
-        if ( m_showOnlyMode )
-            enableShowOnlyMode();
-
+        // View 2:n pistepilvi pysyy ennallaan — vain highlight-kopiot synkronoidaan
         // Synkronoi highlight-kopiot View 2 -ikkunaan jos se on auki
         syncHighlightsToSelectionWindow();
 
