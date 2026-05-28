@@ -73,12 +73,12 @@ static const QStringList s_aphorisms = {
 };
 
 // Tekstialueen koordinaatit kuvakoordinaateissa (768x512)
-static constexpr int kTextX1 = 137;
-static constexpr int kTextY1 =  43;
-static constexpr int kTextX2 = 380;
-static constexpr int kTextY2 = 156;
-static constexpr int kTextW  = kTextX2 - kTextX1;  // 243
-static constexpr int kTextH  = kTextY2 - kTextY1;  // 113
+static constexpr int kTextX1 =  94;
+static constexpr int kTextY1 =  44;
+static constexpr int kTextX2 = 378;
+static constexpr int kTextY2 = 176;
+static constexpr int kTextW  = kTextX2 - kTextX1;  // 284
+static constexpr int kTextH  = kTextY2 - kTextY1;  // 132
 static constexpr int kMaxLines = 4;
 
 // "Sivistynyt Prismamies sivistää:" -teksti
@@ -100,7 +100,7 @@ SplashScreen::SplashScreen( QWidget *parent )
     m_aphorism = s_aphorisms.at( idx );
 
     // Ladataan taustakuva
-    m_pixmap.load( ":/CC/plugin/qMaastoPlugin/images/prismamies50p.png" );
+    m_pixmap.load( ":/CC/plugin/qMaastoPlugin/images/prismamies_sivistaa50.png" );
 
     // Kiinteä koko — kuvan mukaan
     const int w = m_pixmap.isNull() ? 768 : m_pixmap.width();
@@ -121,7 +121,7 @@ SplashScreen::SplashScreen( QWidget *parent )
     }
 
     // Sulkeutuu automaattisesti 3 sekunnin kuluttua
-    QTimer::singleShot( 3000, this, &QDialog::accept );
+    QTimer::singleShot( 4000, this, &QDialog::accept );
 }
 
 // ----------------------------------------------------------------
