@@ -5,6 +5,7 @@ target_sources( ${PROJECT_NAME}
         ${CMAKE_CURRENT_LIST_DIR}/MaastoAction.cpp
         ${CMAKE_CURRENT_LIST_DIR}/PolygonDrawer.cpp
         ${CMAKE_CURRENT_LIST_DIR}/SettingsDialog.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/SplashScreen.cpp
         ${CMAKE_CURRENT_LIST_DIR}/VolumeBuilder.cpp
         ${CMAKE_CURRENT_LIST_DIR}/qMaastoPlugin.cpp
 )

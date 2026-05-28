@@ -4,6 +4,7 @@
 
 #include "qMaastoPlugin.h"
 #include "MaastoAction.h"
+#include "SplashScreen.h"
 #include "ccHObjectCaster.h"
 #include "ccPointCloud.h"
 
@@ -60,6 +61,12 @@ QList<QAction *> qMaastoPlugin::getActions()
                     "Valitse pistepilvi DB-puusta (vasen paneeli) ennen pluginin käynnistystä."
                 );
                 return;
+            }
+
+            // Näytä käynnistyssivu 3 sekunniksi ennen dialogin avaamista
+            {
+                SplashScreen splash( static_cast<QWidget*>( m_app->getMainWindow() ) );
+                splash.exec();
             }
 
             // Avaa uusi dialogi
