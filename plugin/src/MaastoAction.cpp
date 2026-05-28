@@ -653,38 +653,49 @@ namespace MaastoPlugin
                 applyVisibilityFilter();
             } );
 
-        // --- Napbirivi alimmaisena ---
-        QHBoxLayout *buttonRow = new QHBoxLayout();
-
-        // Vasen sarake: "Piirrä polygon" + "Poista valinta" allekkain
-        QVBoxLayout *polygonCol = new QVBoxLayout();
-
+        // --- Välilehdet: Polygon ja Viiva ---
         m_polygonButton = new QPushButton( "Piirrä polygon", this );
         m_polygonButton->setCheckable( true );
-        polygonCol->addWidget( m_polygonButton );
 
-        // Piirrä viiva -nappi + akseli-combobox samalla rivillä
-        {
-            QHBoxLayout *lineRow = new QHBoxLayout();
-            lineRow->setContentsMargins( 0, 0, 0, 0 );
+        m_drawLineButton = new QPushButton( "Piirrä viiva", this );
+        m_drawLineButton->setCheckable( true );
 
-            m_drawLineButton = new QPushButton( "Piirrä viiva", this );
-            m_drawLineButton->setCheckable( true );
-            lineRow->addWidget( m_drawLineButton );
+        m_lineAxisComboBox = new QComboBox( this );
+        m_lineAxisComboBox->addItem( "Z" );
+        m_lineAxisComboBox->addItem( "X" );
+        m_lineAxisComboBox->addItem( "Y" );
+        m_lineAxisComboBox->setFixedWidth( 48 );
 
-            m_lineAxisComboBox = new QComboBox( this );
-            m_lineAxisComboBox->addItem( "Z" );
-            m_lineAxisComboBox->addItem( "X" );
-            m_lineAxisComboBox->addItem( "Y" );
-            m_lineAxisComboBox->setFixedWidth( 48 );
-            lineRow->addWidget( m_lineAxisComboBox );
+        m_copyLineRightButton = new QPushButton( "Kopioi oikealle", this );
+        m_copyLineRightButton->setEnabled( false );  // disabloitu kunnes viiva on piirretty
 
-            m_copyLineRightButton = new QPushButton( "Kopioi oikealle", this );
-            m_copyLineRightButton->setEnabled( false );  // disabloitu kunnes viiva on piirretty
-            lineRow->addWidget( m_copyLineRightButton );
+        QTabWidget *toolTabs = new QTabWidget( this );
 
-            polygonCol->addLayout( lineRow );
-        }
+        // Tab 1: Polygon
+        QWidget *polygonTab = new QWidget();
+        QVBoxLayout *polygonTabLayout = new QVBoxLayout( polygonTab );
+        polygonTabLayout->setContentsMargins( 4, 4, 4, 4 );
+        polygonTabLayout->addWidget( m_polygonButton );
+        polygonTabLayout->addStretch();
+        toolTabs->addTab( polygonTab, "Polygon" );
+
+        // Tab 2: Viiva
+        QWidget *viivaTab = new QWidget();
+        QHBoxLayout *viivaTabLayout = new QHBoxLayout( viivaTab );
+        viivaTabLayout->setContentsMargins( 4, 4, 4, 4 );
+        viivaTabLayout->addWidget( m_drawLineButton );
+        viivaTabLayout->addWidget( m_lineAxisComboBox );
+        viivaTabLayout->addWidget( m_copyLineRightButton );
+        viivaTabLayout->addStretch();
+        toolTabs->addTab( viivaTab, "Viiva" );
+
+        layout->addWidget( toolTabs );
+
+        // --- Napirivi muut työkalut ---
+        QHBoxLayout *buttonRow = new QHBoxLayout();
+
+        // Vasen sarake: Näytä valinta + Korosta/Poista valinta
+        QVBoxLayout *polygonCol = new QVBoxLayout();
 
         {
             QHBoxLayout *showLockRow = new QHBoxLayout();
