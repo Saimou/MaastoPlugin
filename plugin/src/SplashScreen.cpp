@@ -79,7 +79,7 @@ static constexpr int kTextX2 = 380;
 static constexpr int kTextY2 = 156;
 static constexpr int kTextW  = kTextX2 - kTextX1;  // 243
 static constexpr int kTextH  = kTextY2 - kTextY1;  // 113
-static constexpr int kMaxLines = 3;
+static constexpr int kMaxLines = 4;
 
 // "Sivistynyt Prismamies sivistää:" -teksti
 static constexpr int    kLabelFontSize = 22;
