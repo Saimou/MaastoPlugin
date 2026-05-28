@@ -76,15 +76,16 @@ static const QStringList s_aphorisms = {
 static constexpr int kTextX1 = 137;
 static constexpr int kTextY1 =  43;
 static constexpr int kTextX2 = 380;
-static constexpr int kTextY2 = 256;
+static constexpr int kTextY2 = 156;
 static constexpr int kTextW  = kTextX2 - kTextX1;  // 243
-static constexpr int kTextH  = kTextY2 - kTextY1;  // 213
+static constexpr int kTextH  = kTextY2 - kTextY1;  // 113
 static constexpr int kMaxLines = 3;
 
-// "Prismamies sivistää:" -teksti
-static constexpr int    kLabelFontSize = 11;
-static const    QString kLabelText     = "Prismamies sivistää:";
+// "Sivistynyt Prismamies sivistää:" -teksti
+static constexpr int    kLabelFontSize = 22;
+static const    QString kLabelText     = "Sivistynyt Prismamies sivistää:";
 static constexpr int    kLabelMargin   = 10;
+static constexpr int    kLabelPadding  = 3;
 
 // ----------------------------------------------------------------
 // Konstruktori
@@ -217,7 +218,7 @@ void SplashScreen::paintEvent( QPaintEvent * /*event*/ )
 
     p.setPen( Qt::black );
 
-    // 2. "Prismamies sivistää:" — oikeaan alakulmaan, kiinteä 11pt bold
+    // 2. "Sivistynyt Prismamies sivistää:" — oikeaan alakulmaan, 22pt bold, valkoinen pohja
     {
         QFont labelFont( "Arial", kLabelFontSize, QFont::Bold );
         p.setFont( labelFont );
@@ -225,8 +226,18 @@ void SplashScreen::paintEvent( QPaintEvent * /*event*/ )
         const int lw = fm.horizontalAdvance( kLabelText );
         const int lh = fm.height();
         const int lx = width()  - lw - kLabelMargin;
-        const int ly = height() - lh - kLabelMargin + fm.ascent();
-        p.drawText( lx, ly, kLabelText );
+        const int ly = height() - lh - kLabelMargin;
+
+        // Valkoinen tausta tekstin takana
+        p.fillRect( lx - kLabelPadding,
+                    ly - kLabelPadding,
+                    lw + kLabelPadding * 2,
+                    lh + kLabelPadding * 2,
+                    Qt::white );
+
+        // Teksti valkoisen pohjan päälle
+        p.setPen( Qt::black );
+        p.drawText( lx, ly + fm.ascent(), kLabelText );
     }
 
     // 3. Aforismi — määritellylle alueelle, automaattinen fonttikoko
