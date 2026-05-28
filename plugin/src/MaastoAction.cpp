@@ -312,6 +312,7 @@ namespace MaastoPlugin
         , m_linePoint2Highlight( nullptr )
         , m_lastTargetCode( -1 )
         , m_saveButton( nullptr )
+        , m_autoSaveCheckBox( nullptr )
         , m_pickingHub( nullptr )
         , m_pickPointButton( nullptr )
         , m_pickInfoLabel( nullptr )
@@ -350,6 +351,11 @@ namespace MaastoPlugin
             topRow->addWidget( m_pickPointButton );
 
             topRow->addStretch();
+
+            m_autoSaveCheckBox = new QCheckBox( "Automaattitallennus", this );
+            m_autoSaveCheckBox->setChecked( false );
+            m_autoSaveCheckBox->setEnabled( false );
+            topRow->addWidget( m_autoSaveCheckBox );
 
             m_saveButton = new QPushButton( "Tallenna", this );
             m_saveButton->setFixedWidth( 80 );
@@ -1201,13 +1207,16 @@ namespace MaastoPlugin
         populateTargetClassComboBox( m_lastTargetCode );
         populateColorComboBox( keepColor );
 
-        // Päivitä Tallenna-napin tila
+        // Päivitä Tallenna-napin ja automaattitallennus-checkboxin tila
         if ( m_saveButton )
         {
             const QString path = resolveCloudFilePath( m_cloud );
             const QString lc   = path.toLower();
-            m_saveButton->setEnabled( !path.isEmpty()
-                                      && ( lc.endsWith( ".las" ) || lc.endsWith( ".laz" ) ) );
+            const bool canSave = !path.isEmpty()
+                                 && ( lc.endsWith( ".las" ) || lc.endsWith( ".laz" ) );
+            m_saveButton->setEnabled( canSave );
+            if ( m_autoSaveCheckBox )
+                m_autoSaveCheckBox->setEnabled( canSave );
         }
 
         m_updatingCloud = false;
@@ -1943,6 +1952,10 @@ namespace MaastoPlugin
 
         m_appInterface->updateUI();
         m_appInterface->refreshAll();
+
+        // Automaattitallennus luokittelun jälkeen
+        if ( m_autoSaveCheckBox && m_autoSaveCheckBox->isChecked() )
+            saveLasFile();
     }
 
     // ----------------------------------------------------------------

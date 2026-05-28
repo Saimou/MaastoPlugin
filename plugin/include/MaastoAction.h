@@ -270,8 +270,9 @@ namespace MaastoPlugin
         std::map<unsigned, int>       m_preLockedHitCount;      // m_indexHitCount ennen lukitusta
         size_t                        m_preLockedPrismCount;    // prismojen määrä ennen lukitusta
 
-        // Tallenna-nappi
+        // Tallenna-nappi ja automaattitallennus
         QPushButton        *m_saveButton;
+        QCheckBox          *m_autoSaveCheckBox;
 
         // Point picking
         ccPickingHub       *m_pickingHub;
