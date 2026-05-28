@@ -1610,7 +1610,9 @@ namespace MaastoPlugin
 
         if ( fieldName == "RGB" )
         {
-            removePtcColors();  // showSF(false) — vertex-RGB koskematon
+            removePtcColors();
+            if ( !m_cloud->hasColors() )
+                return;  // ei alkuperäistä RGB-dataa — ei tehdä mitään
             m_cloud->showColors( true );
             m_cloud->showSF( false );
         }
@@ -1726,6 +1728,7 @@ namespace MaastoPlugin
         }
 
         m_savedColors.clear();
+        m_hadColorsBeforePtc = false;
         m_cloud->prepareDisplayForRefresh();
         m_ptcColorsApplied = false;
     }
