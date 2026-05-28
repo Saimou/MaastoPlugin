@@ -2748,12 +2748,13 @@ namespace MaastoPlugin
     {
         // Puretaan showOnly-tila ensin jotta voidaan rakentaa uudet pilvet
         // Lukitustilassa EI kutsuta disableShowOnlyMode() koska se palauttaisi
-        // pääpilven näkyviin — poistetaan vain selectionOnlyCloud ja highlight suoraan
+        // pääpilven näkyviin — poistetaan vain highlight-pilvet suoraan.
+        // m_selectionOnlyCloud:ia EI poisteta — View 2:n pohjainen pistepilvi
+        // (luokkaväritys) pysyy näkyvissä koko showOnlyMode-session ajan.
         if ( m_showOnlyMode )
         {
             if ( m_lockViewMode )
             {
-                removeSelectionOnlyCloud();
                 removeHighlightObjects();
             }
             else
