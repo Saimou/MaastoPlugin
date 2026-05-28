@@ -680,14 +680,89 @@ namespace MaastoPlugin
         toolTabs->addTab( polygonTab, "Polygon" );
 
         // Tab 2: Viiva
+        m_lineThicknessSpinBox = new QDoubleSpinBox( this );
+        m_lineThicknessSpinBox->setRange( 0.01, 9999.0 );
+        m_lineThicknessSpinBox->setSingleStep( 0.1 );
+        m_lineThicknessSpinBox->setValue( 1.0 );
+        m_lineThicknessSpinBox->setSuffix( " m" );
+        m_lineThicknessSpinBox->setDecimals( 2 );
+
+        m_extendLineToBBoxCheckBox = new QCheckBox( "Jatka viivan pituutta", this );
+        m_extendLineToBBoxCheckBox->setChecked( false );
+
         QWidget *viivaTab = new QWidget();
-        QHBoxLayout *viivaTabLayout = new QHBoxLayout( viivaTab );
+        QVBoxLayout *viivaTabLayout = new QVBoxLayout( viivaTab );
         viivaTabLayout->setContentsMargins( 4, 4, 4, 4 );
-        viivaTabLayout->addWidget( m_drawLineButton );
-        viivaTabLayout->addWidget( m_lineAxisComboBox );
-        viivaTabLayout->addWidget( m_copyLineRightButton );
+
+        QHBoxLayout *viivaToolRow = new QHBoxLayout();
+        viivaToolRow->addWidget( m_drawLineButton );
+        viivaToolRow->addWidget( m_lineAxisComboBox );
+        viivaToolRow->addWidget( m_copyLineRightButton );
+        viivaToolRow->addStretch();
+        viivaTabLayout->addLayout( viivaToolRow );
+
+        QFormLayout *viivaForm = new QFormLayout();
+        viivaForm->setContentsMargins( 0, 4, 0, 0 );
+        {
+            QWidget     *thickContainer = new QWidget( this );
+            QHBoxLayout *thickRow       = new QHBoxLayout( thickContainer );
+            thickRow->setContentsMargins( 0, 0, 0, 0 );
+            thickRow->addWidget( m_lineThicknessSpinBox );
+            thickRow->addWidget( m_extendLineToBBoxCheckBox );
+            viivaForm->addRow( "Viivatyökalun paksuus:", thickContainer );
+        }
+        viivaTabLayout->addLayout( viivaForm );
         viivaTabLayout->addStretch();
         toolTabs->addTab( viivaTab, "Viiva" );
+
+        // Tab 3: Etäisyyksien määrittely
+        m_nearDistSpinBox = new QDoubleSpinBox( this );
+        m_nearDistSpinBox->setRange( 0.1, 9999.0 );
+        m_nearDistSpinBox->setSingleStep( 0.5 );
+        m_nearDistSpinBox->setValue( 10.0 );
+        m_nearDistSpinBox->setSuffix( " m" );
+        m_nearDistSpinBox->setDecimals( 1 );
+
+        m_measureNearButton = new QPushButton( "Mittaa", this );
+        m_measureNearButton->setCheckable( true );
+        m_measureNearButton->setFixedWidth( 60 );
+
+        m_farDistSpinBox = new QDoubleSpinBox( this );
+        m_farDistSpinBox->setRange( 0.1, 9999.0 );
+        m_farDistSpinBox->setSingleStep( 0.5 );
+        m_farDistSpinBox->setValue( 1000.0 );
+        m_farDistSpinBox->setSuffix( " m" );
+        m_farDistSpinBox->setDecimals( 1 );
+
+        m_measureFarButton = new QPushButton( "Mittaa", this );
+        m_measureFarButton->setCheckable( true );
+        m_measureFarButton->setFixedWidth( 60 );
+
+        QWidget *etaisyysTab = new QWidget();
+        QVBoxLayout *etaisyysTabLayout = new QVBoxLayout( etaisyysTab );
+        etaisyysTabLayout->setContentsMargins( 4, 4, 4, 4 );
+
+        QFormLayout *distForm = new QFormLayout();
+        distForm->setContentsMargins( 0, 0, 0, 0 );
+        {
+            QWidget     *nearContainer = new QWidget( this );
+            QHBoxLayout *nearRow       = new QHBoxLayout( nearContainer );
+            nearRow->setContentsMargins( 0, 0, 0, 0 );
+            nearRow->addWidget( m_nearDistSpinBox );
+            nearRow->addWidget( m_measureNearButton );
+            distForm->addRow( "Lähin etäisyys:", nearContainer );
+        }
+        {
+            QWidget     *farContainer = new QWidget( this );
+            QHBoxLayout *farRow       = new QHBoxLayout( farContainer );
+            farRow->setContentsMargins( 0, 0, 0, 0 );
+            farRow->addWidget( m_farDistSpinBox );
+            farRow->addWidget( m_measureFarButton );
+            distForm->addRow( "Pisin etäisyys:", farContainer );
+        }
+        etaisyysTabLayout->addLayout( distForm );
+        etaisyysTabLayout->addStretch();
+        toolTabs->addTab( etaisyysTab, "Etäisyyksien määrittely" );
 
         layout->addWidget( toolTabs );
 
@@ -768,7 +843,7 @@ namespace MaastoPlugin
         // --- Polygonien vähimmäismäärä ---
         {
             QHBoxLayout *polyCountRow = new QHBoxLayout();
-            polyCountRow->addWidget( new QLabel( "Polygonien vähimmäismäärä:", this ) );
+            polyCountRow->addWidget( new QLabel( "Valintamuotojen minimimäärä:", this ) );
             m_minPolygonCountSpinBox = new QSpinBox( this );
             m_minPolygonCountSpinBox->setRange( 1, 10 );
             m_minPolygonCountSpinBox->setValue( 1 );
@@ -782,73 +857,7 @@ namespace MaastoPlugin
         connect( m_minPolygonCountSpinBox, QOverload<int>::of( &QSpinBox::valueChanged ),
             this, [this]() { refreshHighlights(); } );
 
-        // --- Etäisyysasetukset ---
-        QFormLayout *distForm = new QFormLayout();
-        distForm->setContentsMargins( 0, 4, 0, 4 );
 
-        // Near: spinbox + Mittaa-nappi
-        {
-            m_nearDistSpinBox = new QDoubleSpinBox( this );
-            m_nearDistSpinBox->setRange( 0.1, 9999.0 );
-            m_nearDistSpinBox->setSingleStep( 0.5 );
-            m_nearDistSpinBox->setValue( 10.0 );
-            m_nearDistSpinBox->setSuffix( " m" );
-            m_nearDistSpinBox->setDecimals( 1 );
-
-            m_measureNearButton = new QPushButton( "Mittaa", this );
-            m_measureNearButton->setCheckable( true );
-            m_measureNearButton->setFixedWidth( 60 );
-
-            QWidget     *nearContainer = new QWidget( this );
-            QHBoxLayout *nearRow       = new QHBoxLayout( nearContainer );
-            nearRow->setContentsMargins( 0, 0, 0, 0 );
-            nearRow->addWidget( m_nearDistSpinBox );
-            nearRow->addWidget( m_measureNearButton );
-            distForm->addRow( "Lähin etäisyys:", nearContainer );
-        }
-
-        // Far: spinbox + Mittaa-nappi
-        {
-            m_farDistSpinBox = new QDoubleSpinBox( this );
-            m_farDistSpinBox->setRange( 0.1, 9999.0 );
-            m_farDistSpinBox->setSingleStep( 0.5 );
-            m_farDistSpinBox->setValue( 1000.0 );
-            m_farDistSpinBox->setSuffix( " m" );
-            m_farDistSpinBox->setDecimals( 1 );
-
-            m_measureFarButton = new QPushButton( "Mittaa", this );
-            m_measureFarButton->setCheckable( true );
-            m_measureFarButton->setFixedWidth( 60 );
-
-            QWidget     *farContainer = new QWidget( this );
-            QHBoxLayout *farRow       = new QHBoxLayout( farContainer );
-            farRow->setContentsMargins( 0, 0, 0, 0 );
-            farRow->addWidget( m_farDistSpinBox );
-            farRow->addWidget( m_measureFarButton );
-            distForm->addRow( "Pisin etäisyys:", farContainer );
-        }
-
-        // Viivatyökalun paksuus + "Jatka viivan pituutta" -täppä samalla rivillä
-        {
-            m_lineThicknessSpinBox = new QDoubleSpinBox( this );
-            m_lineThicknessSpinBox->setRange( 0.01, 9999.0 );
-            m_lineThicknessSpinBox->setSingleStep( 0.1 );
-            m_lineThicknessSpinBox->setValue( 1.0 );
-            m_lineThicknessSpinBox->setSuffix( " m" );
-            m_lineThicknessSpinBox->setDecimals( 2 );
-
-            m_extendLineToBBoxCheckBox = new QCheckBox( "Jatka viivan pituutta", this );
-            m_extendLineToBBoxCheckBox->setChecked( false );
-
-            QWidget     *thickContainer = new QWidget( this );
-            QHBoxLayout *thickRow       = new QHBoxLayout( thickContainer );
-            thickRow->setContentsMargins( 0, 0, 0, 0 );
-            thickRow->addWidget( m_lineThicknessSpinBox );
-            thickRow->addWidget( m_extendLineToBBoxCheckBox );
-            distForm->addRow( "Viivatyökalun paksuus:", thickContainer );
-        }
-
-        layout->addLayout( distForm );
 
         // Validointi: lähin < pisin
         connect( m_nearDistSpinBox, QOverload<double>::of( &QDoubleSpinBox::valueChanged ),
