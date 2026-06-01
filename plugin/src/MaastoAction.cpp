@@ -58,6 +58,7 @@
 
 namespace MaastoPlugin
 {
+
     // ----------------------------------------------------------------
     // Apufunktiot
     // ----------------------------------------------------------------
@@ -2034,10 +2035,11 @@ namespace MaastoPlugin
         m_polygonButton->blockSignals( false );
         stopLinePicking();
 
-        // 2. Jos View 2 on jäädytetty (erillinen ikkuna -tila), sulje se
+        // 2. Jos View 2 on jäädytetty (erillinen ikkuna -tila), tyhjennetään sen sisältö
+        // mutta jätetään ikkuna auki
         if ( m_view2Frozen )
         {
-            disableShowOnlyMode();  // poistaa View 2:n pilven ja ikkunan, nollaa m_view2Frozen
+            clearSelectionWindowContent();
         }
 
         // 3. Jos "Näytä valinta" on päällä (View 1 -tila), pura tila
@@ -2055,14 +2057,13 @@ namespace MaastoPlugin
                 m_showOnlyButton->blockSignals( false );
                 m_showOnlyButton->setEnabled( false );
             }
-            // Pääpilvi oli piilotettu View 1:ssä — palautetaan näkyviin
             disableShowOnlyMode();
         }
 
         // 4. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
         clearSelectionMeshes();
         clearSelectionSizeSubClouds();
-        removeSelectionOnlyCloud();   // poistaa vanhan valintapilven View 2:sta
+        removeSelectionOnlyCloud();
         m_selectionWindowPrismOffset = 0;
         for ( ccHObject *obj : m_meshObjects )
             m_appInterface->removeFromDB( obj, true );
@@ -2340,6 +2341,60 @@ namespace MaastoPlugin
     // disableShowOnlyMode
     // ----------------------------------------------------------------
 
+    // ----------------------------------------------------------------
+    // clearSelectionWindowContent
+    // Tyhjentää View 2 -ikkunan sisällön (pilvet, highlightit, prismat)
+    // mutta jättää ikkunan auki. Kutsutaan clearSelection():sta.
+    // ----------------------------------------------------------------
+    void MaastoDialog::clearSelectionWindowContent()
+    {
+        m_view2Frozen = false;
+
+        if ( m_selectionGLWindow && m_selectionWindowIsOwned )
+        {
+            // Poistetaan kaikki kopiot OwnDB:stä
+            clearSelectionHighlights();
+            clearSelectionMeshes();
+            clearSelectionSizeSubClouds();
+            m_selectionWindowPrismOffset = 0;
+
+            // Poistetaan valintapilvi
+            if ( m_selectionOnlyCloud )
+            {
+                m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
+                m_selectionOnlyCloud->setDisplay( nullptr );
+                delete m_selectionOnlyCloud;
+                m_selectionOnlyCloud = nullptr;
+            }
+
+            // Tyhjennetään OwnDB varmuuden vuoksi
+            if ( m_selectionGLWindow->getOwnDB() )
+                m_selectionGLWindow->getOwnDB()->removeAllChildren();
+
+            // Päivitetään tyhjä ikkuna
+            m_selectionGLWindow->redraw();
+        }
+        else
+        {
+            // View 1 -tapaus tai ei omisteta ikkunaa — poistetaan pilvi normaalisti
+            removeSelectionOnlyCloud();
+        }
+
+        // Palauta pääpilvi näkyviin
+        if ( m_cloud )
+        {
+            m_cloud->setVisible( true );
+            m_cloud->prepareDisplayForRefresh();
+        }
+
+        m_appInterface->refreshAll();
+    }
+
+    // ----------------------------------------------------------------
+    // disableShowOnlyMode
+    // Tyhjentää View 2 sisällön JA tuhoaa ikkunan.
+    // Kutsutaan destruktorista ja aboutToClose-lambdasta.
+    // ----------------------------------------------------------------
     void MaastoDialog::disableShowOnlyMode()
     {
         m_view2Frozen = false;
@@ -2351,42 +2406,45 @@ namespace MaastoPlugin
 
             if ( m_selectionWindowIsOwned )
             {
-                // MDI-ikkuna — tuhotaan.
-                // Poistetaan kopiot removeFromOwnDB+delete kautta ennen ikkunan tuhoamista
+                // MDI-ikkuna — tuhotaan kokonaan
                 clearSelectionHighlights();
                 clearSelectionMeshes();
                 clearSelectionSizeSubClouds();
                 m_selectionWindowPrismOffset = 0;
-                // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta
                 if ( m_selectionOnlyCloud )
                 {
                     m_selectionOnlyCloud->setDisplay( nullptr );
                     delete m_selectionOnlyCloud;
                     m_selectionOnlyCloud = nullptr;
                 }
-                // Tyhjennetään OwnDB kokonaan varmuuden vuoksi
                 if ( m_selectionGLWindow->getOwnDB() )
                     m_selectionGLWindow->getOwnDB()->removeAllChildren();
-                // Katkaistaan signaaliyhteydet ENNEN sulkemista — estää aboutToClose-lambdan
-                // ajamisen kesken siivouksen (lambda nollaisi m_selectionGLWindow/-Widget → crash)
                 disconnect( m_selectionGLWindow->signalEmitter(), nullptr, this, nullptr );
-                // Suljetaan QMdiSubWindow
-                if ( QMdiSubWindow *sub = qobject_cast<QMdiSubWindow*>( m_selectionGLWidget->parent() ) )
-                    sub->close();
+                // Haetaan sub ja mdiArea ennen destroyGLWindow():ta
+                QMdiSubWindow *sub = qobject_cast<QMdiSubWindow*>( m_selectionGLWidget->parent() );
+                QMainWindow *mainWin = m_appInterface->getMainWindow();
+                QMdiArea *mdiArea = mainWin ? qobject_cast<QMdiArea*>( mainWin->centralWidget() ) : nullptr;
                 m_selectionGLWidget->hide();
+                // deleteLater() siirtää subwindow-deletion event loopin seuraavaan kierrokseen —
+                // destroyGLWindow():n setParent(nullptr) lähettää ChildRemoved-eventin sub:lle,
+                // mutta sub on jo poistettu MDI-rekisteristä eikä refreshAll() enää näe sitä.
+                if ( sub )
+                {
+                    sub->hide();
+                    if ( mdiArea )
+                        mdiArea->removeSubWindow( sub );
+                    sub->deleteLater();
+                }
                 m_appInterface->destroyGLWindow( m_selectionGLWindow );
                 m_selectionGLWidget = nullptr;
             }
-            // View 1 -tapauksessa ei tuhota ikkunaa — se on CC:n oma ikkuna
 
             m_selectionGLWindow      = nullptr;
             m_selectionWindowIsOwned = false;
         }
 
-        // Poista väliaikainen pilvi jos vielä olemassa (View 1 -tapaus tai yllä ei deletoitu)
         removeSelectionOnlyCloud();
 
-        // Palauta pääpilvi näkyviin
         if ( m_cloud )
         {
             m_cloud->setVisible( true );

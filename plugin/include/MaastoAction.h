@@ -82,6 +82,7 @@ namespace MaastoPlugin
         // "Näytä vain valinta" -tila
         void enableShowOnlyMode( bool resetCamera = false );
         void disableShowOnlyMode();
+        void clearSelectionWindowContent(); // tyhjentää View 2 sisällön, ei tuhoa ikkunaa
         void removeSelectionOnlyCloud();
 
         // Mittaus: piste valitaan 3D-ikkunasta
