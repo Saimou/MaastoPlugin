@@ -2788,6 +2788,10 @@ namespace MaastoPlugin
 
         highlighted->setPointSize( static_cast<unsigned>( m_highlightPointSize ) );
 
+        // Varmistetaan että highlight renderöityy View 1:ssä — ei View 2:ssa
+        if ( m_cloud && m_cloud->getDisplay() )
+            highlighted->setDisplay( m_cloud->getDisplay() );
+
         m_cloud->addChild( highlighted );
         m_appInterface->addToDB( highlighted, false, false, false, false );
         m_highlightObjects.push_back( highlighted );
@@ -2879,6 +2883,11 @@ namespace MaastoPlugin
 
         if ( highlighted )
         {
+            // Varmistetaan että highlight renderöityy View 1:ssä — ei View 2:ssa
+            // (addToDB asettaisi displayksi aktiivisen ikkunan joka saattaa olla View 2)
+            if ( m_cloud && m_cloud->getDisplay() )
+                highlighted->setDisplay( m_cloud->getDisplay() );
+
             m_cloud->addChild( highlighted );
             m_appInterface->addToDB(
                 highlighted,
