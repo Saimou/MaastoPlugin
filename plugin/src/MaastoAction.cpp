@@ -2857,6 +2857,19 @@ namespace MaastoPlugin
             // Aktivoi nappi kun valittuja pisteitä on — ei lukituksen aikana
             if ( m_showOnlyButton )
                 m_showOnlyButton->setEnabled( !m_lockViewMode );
+
+            // Päivitä View 2:n pohjainen pilvi uuden leikkauksen mukaan
+            // (snapshot päivitetään — ei zoom-hyppyä)
+            if ( m_lockViewMode && m_selectionWindowIsOwned && m_selectionGLWindow )
+            {
+                m_lockedIndices = std::unordered_set<unsigned>(
+                    m_selectionIndices.begin(), m_selectionIndices.end() );
+                clearSelectionHighlights();
+                clearSelectionMeshes();
+                clearSelectionSizeSubClouds();
+                removeSelectionOnlyCloud();
+                enableShowOnlyMode( false );
+            }
         }
         else
         {
