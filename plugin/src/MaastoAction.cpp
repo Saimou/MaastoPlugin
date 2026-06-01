@@ -127,10 +127,10 @@ namespace MaastoPlugin
                 m_selectionGLWindow->removeFromOwnDB( m_selectionOnlyCloud );
             if ( m_selectionWindowIsOwned && m_selectionGLWidget )
             {
-                // Puhdista kopiot ennen ikkunan tuhoamista
-                m_selectionHighlightObjects.clear();
-                m_selectionMeshObjects.clear();
-                m_selectionSizeSubClouds.clear();
+                // Poistetaan kopiot removeFromOwnDB+delete kautta ennen ikkunan tuhoamista
+                clearSelectionHighlights();
+                clearSelectionMeshes();
+                clearSelectionSizeSubClouds();
                 m_selectionWindowPrismOffset = 0;
                 if ( m_selectionOnlyCloud )
                 {
@@ -2344,10 +2344,11 @@ namespace MaastoPlugin
             if ( m_selectionWindowIsOwned )
             {
                 // MDI-ikkuna — tuhotaan.
-                // Puhdistetaan kopiot ennen ikkunan tuhoamista
-                m_selectionHighlightObjects.clear(); // ikkuna tuhoutuu itse, ei tarvita removeFromOwnDB
-                m_selectionMeshObjects.clear();      // sama
-                m_selectionSizeSubClouds.clear();    // sama
+                // Poistetaan kopiot removeFromOwnDB+delete kautta ennen ikkunan tuhoamista
+                // (pelkkä .clear() jättäisi objektit muistiin display=tuhottu_ikkuna → refreshAll crash)
+                clearSelectionHighlights();
+                clearSelectionMeshes();
+                clearSelectionSizeSubClouds();
                 m_selectionWindowPrismOffset = 0;
                 // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
                 // ei osoita jo tuhottuun ikkunaan pilven destruktorissa.
