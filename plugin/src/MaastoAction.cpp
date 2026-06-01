@@ -2017,13 +2017,22 @@ namespace MaastoPlugin
 
     void MaastoDialog::clearSelection()
     {
-        // 1. Jos View 2 on jäädytetty (erillinen ikkuna -tila), sulje se
+        // 1. Pysäytä polygon- ja viiva-piirto ENSIN — nollaa m_previousGLWindow
+        // ennen kuin View 2:n ikkuna mahdollisesti tuhotaan (estää dangling pointer -kaatumisen)
+        m_polygonDrawer->stopDrawing();
+        m_polygonDrawer->clearCompletedPolygon();
+        m_polygonButton->blockSignals( true );
+        m_polygonButton->setChecked( false );
+        m_polygonButton->blockSignals( false );
+        stopLinePicking();
+
+        // 2. Jos View 2 on jäädytetty (erillinen ikkuna -tila), sulje se
         if ( m_view2Frozen )
         {
             disableShowOnlyMode();  // poistaa View 2:n pilven ja ikkunan, nollaa m_view2Frozen
         }
 
-        // 2. Jos "Näytä valinta" on päällä (View 1 -tila), pura tila
+        // 3. Jos "Näytä valinta" on päällä (View 1 -tila), pura tila
         if ( m_showOnlyMode )
         {
             m_lockViewMode = false;
@@ -2042,7 +2051,7 @@ namespace MaastoPlugin
             disableShowOnlyMode();
         }
 
-        // 2. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
+        // 4. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
         clearSelectionMeshes();
         clearSelectionSizeSubClouds();
         removeSelectionOnlyCloud();   // poistaa vanhan valintapilven View 2:sta
@@ -2052,28 +2061,18 @@ namespace MaastoPlugin
         m_meshObjects.clear();
         m_prismData.clear();
 
-        // 3. Poista highlight-pistepilvet DB:stä
+        // 5. Poista highlight-pistepilvet DB:stä
         removeHighlightObjects();
 
-        // 4. Tyhjennä indeksit ja osuma-laskuri
+        // 6. Tyhjennä indeksit ja osuma-laskuri
         m_selectionIndices.clear();
         m_indexHitCount.clear();
 
-        // 5. Disabloi "Näytä vain valinta" -nappi
+        // 7. Disabloi "Näytä vain valinta" -nappi
         if ( m_showOnlyButton )
             m_showOnlyButton->setEnabled( false );
 
-        // 6. Pysäytä aktiivinen polygon-piirto ja poista näkyvä polygon GL-ikkunasta
-        m_polygonDrawer->stopDrawing();
-        m_polygonDrawer->clearCompletedPolygon();
-
-        // 7. Nollaa polygon-nappi ilman signaalin laukaisemista
-        m_polygonButton->blockSignals( true );
-        m_polygonButton->setChecked( false );
-        m_polygonButton->blockSignals( false );
-
-        // 8. Pysäytä viiva-työkalu jos käynnissä
-        stopLinePicking();
+        // 9. Nollaa viiva-työkalu-napit
         if ( m_drawLineButton )
         {
             m_drawLineButton->blockSignals( true );
