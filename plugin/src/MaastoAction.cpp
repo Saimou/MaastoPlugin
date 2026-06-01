@@ -2394,15 +2394,7 @@ namespace MaastoPlugin
         // Näytetään vain pisteet jotka ovat vähintään N prisman sisällä
         const int minHits = m_minPolygonCountSpinBox ? m_minPolygonCountSpinBox->value() : 1;
 
-        // Kohdeluokan pisteitä ei korosteta — ne tulisivat luokitelluiksi
-        const QVariant targetData = m_targetClassComboBox
-                                    ? m_targetClassComboBox->currentData()
-                                    : QVariant();
-        const bool hasTarget = targetData.isValid();
-        const float targetVal = hasTarget ? static_cast<float>( targetData.toFloat() ) : 0.0f;
-
         // Kerää pisteet joiden hitCount ≥ minHits ja arvo on valituissa arvoissa
-        // (kohdeluokan pisteet jätetään pois korostuksesta)
         // Lukituksen aikana hyväksytään vain lukitushetken snapshot-pisteet
         std::vector<unsigned> matchIndices;
         for ( const auto& kv : m_indexHitCount )
@@ -2414,7 +2406,7 @@ namespace MaastoPlugin
             if ( m_lockViewMode && m_lockedIndices.count( idx ) == 0 )
                 continue;
             const float val = static_cast<float>( sf->getValue( idx ) );
-            if ( selectedValues.contains( val ) && ( !hasTarget || val != targetVal ) )
+            if ( selectedValues.contains( val ) )
                 matchIndices.push_back( idx );
         }
 
