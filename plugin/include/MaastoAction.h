@@ -256,6 +256,7 @@ namespace MaastoPlugin
         // "Näytä valinta" -tila
         bool                          m_showOnlyMode;           // onko tila päällä
         bool                          m_lockViewMode;           // onko näkymä lukittu (aina true kun showOnly päällä)
+        bool                          m_view2Frozen;            // View 2:n pistepilvi jäädytetty (erillinen ikkuna -tila)
         bool                          m_selectionWindowIsOwned; // true = MDI-ikkuna luotu createGLWindow():lla
         ccPointCloud                 *m_selectionOnlyCloud;     // väliaikainen pilvi "vain valinta" -tilaan
         ccGLWindowInterface          *m_selectionGLWindow;      // 3D-ikkuna jossa valinta näytetään

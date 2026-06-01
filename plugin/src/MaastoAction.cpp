@@ -293,6 +293,7 @@ namespace MaastoPlugin
         , m_measureHighlight( nullptr )
         , m_showOnlyMode( false )
         , m_lockViewMode( false )
+        , m_view2Frozen( false )
         , m_selectionWindowIsOwned( false )
         , m_selectionOnlyCloud( nullptr )
         , m_selectionGLWindow( nullptr )
@@ -948,26 +949,23 @@ namespace MaastoPlugin
         // "Näytä valinta" -toggle
         connect( m_showOnlyButton, &QPushButton::toggled, this, [this]( bool checked )
         {
-            m_showOnlyMode = checked;
+            const bool separateWindow = m_separateWindowCheckBox && m_separateWindowCheckBox->isChecked();
+
             if ( checked )
             {
-                // Otetaan snapshot nykyisestä valinnasta (lukitus)
-                m_lockViewMode        = true;
+                // Otetaan snapshot nykyisestä valinnasta
                 m_preLockedHitCount   = m_indexHitCount;
                 m_preLockedPrismCount = m_meshObjects.size();
                 m_lockedIndices = std::unordered_set<unsigned>(
                     m_selectionIndices.begin(), m_selectionIndices.end() );
 
                 // Jos View 2 on jo auki, tyhjennetään sen OwnDB suoraan
-                // (ei kutsuta disableShowOnlyMode() jotta vältytään refreshAll()-sivuvaikutuksilta
-                // ja ikkunan sulkemis/avaamissykliltä joka aiheuttaa koordinaattivirheen)
                 if ( m_selectionWindowIsOwned && m_selectionGLWindow )
                 {
                     clearSelectionHighlights();
                     clearSelectionMeshes();
                     clearSelectionSizeSubClouds();
                     removeSelectionOnlyCloud();
-                    // m_selectionGLWindow jää auki, windowAlreadyExisted=true enableShowOnlyMode():ssa
                 }
 
                 // Avaa View 2 -ikkuna uudelle valinnalle
@@ -979,11 +977,33 @@ namespace MaastoPlugin
                     m_lockedIndices.begin(), m_lockedIndices.end() ) );
                 syncHighlightsToSelectionWindow();
 
+                if ( separateWindow )
+                {
+                    // Erillinen ikkuna: nappi ei jää pohjaan, View 2 jäädytetään
+                    // View 1 jatkuu vapaasti ilman lukitusta
+                    m_view2Frozen  = true;
+                    m_showOnlyMode = false;
+                    m_lockViewMode = false;
+                    m_lockedIndices.clear();
+                    m_preLockedHitCount.clear();
+                    m_preLockedPrismCount = 0;
+                    m_showOnlyButton->blockSignals( true );
+                    m_showOnlyButton->setChecked( false );
+                    m_showOnlyButton->blockSignals( false );
+                }
+                else
+                {
+                    // View 1: nappi jää pohjaan, näkymä lukitaan
+                    m_showOnlyMode = true;
+                    m_lockViewMode = true;
+                }
+
                 m_cloud->prepareDisplayForRefresh_recursive();
                 m_appInterface->refreshAll();
             }
             else
             {
+                // Nappi nousee — vain View 1 -tila (separateWindow=false)
                 // Puretaan lukitus ja poistetaan lukituksen aikana lisätyt prismat
                 for ( size_t i = m_preLockedPrismCount; i < m_meshObjects.size(); ++i )
                     m_appInterface->removeFromDB( m_meshObjects[i], true );
@@ -1987,7 +2007,13 @@ namespace MaastoPlugin
 
     void MaastoDialog::clearSelection()
     {
-        // 1. Jos "Näytä valinta" on päällä, pura tila
+        // 1. Jos View 2 on jäädytetty (erillinen ikkuna -tila), sulje se
+        if ( m_view2Frozen )
+        {
+            disableShowOnlyMode();  // poistaa View 2:n pilven ja ikkunan, nollaa m_view2Frozen
+        }
+
+        // 2. Jos "Näytä valinta" on päällä (View 1 -tila), pura tila
         if ( m_showOnlyMode )
         {
             m_lockViewMode = false;
@@ -2002,18 +2028,8 @@ namespace MaastoPlugin
                 m_showOnlyButton->blockSignals( false );
                 m_showOnlyButton->setEnabled( false );
             }
-
-            if ( m_selectionWindowIsOwned )
-            {
-                // Checkbox ON: MDI-ikkuna jää auki — View 2 näyttää valitut pisteet edelleen.
-                // Ei kutsuta disableShowOnlyMode(). Pääpilvi oli jo näkyvissä, ei tarvita palauttamista.
-                // (disableShowOnlyMode() kutsutaan vasta kun nappia painetaan uudelleen)
-            }
-            else
-            {
-                // Checkbox OFF: pääpilvi oli piilotettu View 1:ssä — palautetaan näkyviin
-                disableShowOnlyMode();
-            }
+            // Pääpilvi oli piilotettu View 1:ssä — palautetaan näkyviin
+            disableShowOnlyMode();
         }
 
         // 2. Poista kaikki prism-meshit DB:stä (myös View 2 -kopiot)
@@ -2219,6 +2235,7 @@ namespace MaastoPlugin
                     }
                     m_showOnlyMode = false;
                     m_lockViewMode = false;
+                    m_view2Frozen  = false;
                     m_lockedIndices.clear();
                     m_preLockedHitCount.clear();
                     m_preLockedPrismCount = 0;
@@ -2308,6 +2325,8 @@ namespace MaastoPlugin
 
     void MaastoDialog::disableShowOnlyMode()
     {
+        m_view2Frozen = false;
+
         if ( m_selectionGLWindow )
         {
             if ( m_selectionOnlyCloud )
@@ -2860,6 +2879,8 @@ namespace MaastoPlugin
 
             // Päivitä View 2:n pohjainen pilvi uuden leikkauksen mukaan
             // (snapshot päivitetään — ei zoom-hyppyä)
+            // Vain View 1 -lukitustilassa (m_lockViewMode). View 2 jäädytystilassa (m_view2Frozen)
+            // pohjainen pilvi pysyy ennallaan.
             if ( m_lockViewMode && m_selectionWindowIsOwned && m_selectionGLWindow )
             {
                 m_lockedIndices = std::unordered_set<unsigned>(
@@ -2900,8 +2921,9 @@ namespace MaastoPlugin
         }
 
         // View 2:n pistepilvi pysyy ennallaan — vain highlight-kopiot synkronoidaan
-        // Synkronoi highlight-kopiot View 2 -ikkunaan jos se on auki
-        syncHighlightsToSelectionWindow();
+        // Jäädytystilassa (m_view2Frozen) View 2:ta ei päivitetä lainkaan
+        if ( !m_view2Frozen )
+            syncHighlightsToSelectionWindow();
 
         // Ei kutsuta updateUI():ta tässä — se triggeröisi onNewSelection() → updateCloud()
         // → populateColorComboBox() → applyColorField() → updateUI() silmukan
