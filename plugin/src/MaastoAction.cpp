@@ -141,7 +141,9 @@ namespace MaastoPlugin
                 // Tyhjennetään OwnDB kokonaan varmuuden vuoksi
                 if ( m_selectionGLWindow->getOwnDB() )
                     m_selectionGLWindow->getOwnDB()->removeAllChildren();
-                // Suljetaan QMdiSubWindow ennen GL-ikkunan tuhoamista
+                // Katkaistaan signaaliyhteydet ennen sulkemista
+                disconnect( m_selectionGLWindow->signalEmitter(), nullptr, this, nullptr );
+                // Suljetaan QMdiSubWindow
                 if ( QMdiSubWindow *sub = qobject_cast<QMdiSubWindow*>( m_selectionGLWidget->parent() ) )
                     sub->close();
                 m_selectionGLWidget->hide();
@@ -2362,10 +2364,13 @@ namespace MaastoPlugin
                     delete m_selectionOnlyCloud;
                     m_selectionOnlyCloud = nullptr;
                 }
-                // Tyhjennetään OwnDB kokonaan varmuuden vuoksi ennen ikkunan tuhoamista
+                // Tyhjennetään OwnDB kokonaan varmuuden vuoksi
                 if ( m_selectionGLWindow->getOwnDB() )
                     m_selectionGLWindow->getOwnDB()->removeAllChildren();
-                // Suljetaan QMdiSubWindow ennen GL-ikkunan tuhoamista
+                // Katkaistaan signaaliyhteydet ENNEN sulkemista — estää aboutToClose-lambdan
+                // ajamisen kesken siivouksen (lambda nollaisi m_selectionGLWindow/-Widget → crash)
+                disconnect( m_selectionGLWindow->signalEmitter(), nullptr, this, nullptr );
+                // Suljetaan QMdiSubWindow
                 if ( QMdiSubWindow *sub = qobject_cast<QMdiSubWindow*>( m_selectionGLWidget->parent() ) )
                     sub->close();
                 m_selectionGLWidget->hide();
