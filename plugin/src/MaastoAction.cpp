@@ -1165,9 +1165,9 @@ namespace MaastoPlugin
                     // Päivitä highlight-pilvet valittujen arvojen mukaan
                     refreshHighlights();
 
-                    // Jos polygon piirrettiin View 2:n ikkunassa jäädytystilassa,
-                    // synkronoidaan highlight-kopiot View 2:een (ohitetaan m_view2Frozen-suojaus)
-                    if ( m_view2Frozen && win == m_selectionGLWindow )
+                    // Jos View 2 on jäädytetty, synkronoidaan highlight-kopiot View 2:een
+                    // riippumatta siitä piirrettiinkö polygon View 1:ssä vai View 2:ssa
+                    if ( m_view2Frozen )
                         syncHighlightsToSelectionWindow();
                 }
                 else
