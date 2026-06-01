@@ -1108,6 +1108,11 @@ namespace MaastoPlugin
                 );
                 if ( mesh )
                 {
+                    // Varmistetaan että prisma renderöityy View 1:ssä — ei View 2:ssa
+                    // (addToDB asettaisi displayksi aktiivisen ikkunan joka saattaa olla View 2)
+                    if ( m_cloud && m_cloud->getDisplay() )
+                        mesh->setDisplay( m_cloud->getDisplay() );
+
                     m_appInterface->addToDB( mesh );
                     m_meshObjects.push_back( mesh );
 
