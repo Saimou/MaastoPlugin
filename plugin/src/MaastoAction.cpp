@@ -138,6 +138,12 @@ namespace MaastoPlugin
                     delete m_selectionOnlyCloud;
                     m_selectionOnlyCloud = nullptr;
                 }
+                // Tyhjennetään OwnDB kokonaan varmuuden vuoksi
+                if ( m_selectionGLWindow->getOwnDB() )
+                    m_selectionGLWindow->getOwnDB()->removeAllChildren();
+                // Suljetaan QMdiSubWindow ennen GL-ikkunan tuhoamista
+                if ( QMdiSubWindow *sub = qobject_cast<QMdiSubWindow*>( m_selectionGLWidget->parent() ) )
+                    sub->close();
                 m_selectionGLWidget->hide();
                 m_appInterface->destroyGLWindow( m_selectionGLWindow );
                 m_selectionGLWidget = nullptr;
@@ -2345,19 +2351,23 @@ namespace MaastoPlugin
             {
                 // MDI-ikkuna — tuhotaan.
                 // Poistetaan kopiot removeFromOwnDB+delete kautta ennen ikkunan tuhoamista
-                // (pelkkä .clear() jättäisi objektit muistiin display=tuhottu_ikkuna → refreshAll crash)
                 clearSelectionHighlights();
                 clearSelectionMeshes();
                 clearSelectionSizeSubClouds();
                 m_selectionWindowPrismOffset = 0;
-                // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta jotta pilven display-osoitin
-                // ei osoita jo tuhottuun ikkunaan pilven destruktorissa.
+                // Deletoidaan valintapilvi ENNEN destroyGLWindow():ta
                 if ( m_selectionOnlyCloud )
                 {
                     m_selectionOnlyCloud->setDisplay( nullptr );
                     delete m_selectionOnlyCloud;
                     m_selectionOnlyCloud = nullptr;
                 }
+                // Tyhjennetään OwnDB kokonaan varmuuden vuoksi ennen ikkunan tuhoamista
+                if ( m_selectionGLWindow->getOwnDB() )
+                    m_selectionGLWindow->getOwnDB()->removeAllChildren();
+                // Suljetaan QMdiSubWindow ennen GL-ikkunan tuhoamista
+                if ( QMdiSubWindow *sub = qobject_cast<QMdiSubWindow*>( m_selectionGLWidget->parent() ) )
+                    sub->close();
                 m_selectionGLWidget->hide();
                 m_appInterface->destroyGLWindow( m_selectionGLWindow );
                 m_selectionGLWidget = nullptr;
