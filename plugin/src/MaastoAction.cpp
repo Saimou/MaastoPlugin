@@ -2827,6 +2827,13 @@ namespace MaastoPlugin
                 m_appInterface->refreshAll();
                 return;
             }
+            if ( m_view2Frozen )
+            {
+                // View 2 jäädytetty — ei nollata tilaa, View 2 pysyy ennallaan
+                m_cloud->prepareDisplayForRefresh_recursive();
+                m_appInterface->refreshAll();
+                return;
+            }
             // Ei valintaa — disabloi napit ja nollaa tila
             m_selectionIndices.clear();
             m_lockViewMode = false;
@@ -2900,6 +2907,11 @@ namespace MaastoPlugin
                 // Säilytetään lukittu näkymä — selectionOnlyCloud rakennetaan m_lockedIndices:stä
                 // highlight on tyhjä (ei korostusta)
                 enableShowOnlyMode();
+            }
+            else if ( m_view2Frozen )
+            {
+                // View 2 jäädytetty: suodatus ei tuottanut pisteitä — ei nollata tilaa,
+                // View 2 pysyy ennallaan (korostukset häviävät mutta pohjainen pilvi jää)
             }
             else
             {
