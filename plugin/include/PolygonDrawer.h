@@ -4,8 +4,9 @@
 #include <vector>
 #include <array>
 
+#include "ccGLWindowInterface.h"
+
 class ccMainAppInterface;
-class ccGLWindowInterface;
 class ccPointCloud;
 class ccPolyline;
 class QPushButton;
@@ -32,7 +33,8 @@ public:
     explicit PolygonDrawer( ccMainAppInterface *app, QObject *parent = nullptr );
     ~PolygonDrawer() override;
 
-    void startDrawing();
+    // targetWindow: ikkuna johon piirretään. Jos nullptr, käytetään aktiivista ikkunaa.
+    void startDrawing( ccGLWindowInterface *targetWindow = nullptr );
     void stopDrawing();
 
     // Poistaa viimeksi valmiin polygonin GL-ikkunasta (kutsuttavissa ulkoapäin)
@@ -75,4 +77,9 @@ private:
     std::vector<Point2D> m_closedVertices;
 
     bool                 m_drawing;
+
+    // Tallennetaan piirtoikkunan alkuperäinen picking-moodi ennen kuin
+    // startDrawing() asettaa NO_PICKING — palautetaan stopDrawing():ssa
+    // jotta esim. View 2:n POINT_PICKING ei tuhoudu piirtämisen jälkeen.
+    ccGLWindowInterface::PICKING_MODE m_savedPickingMode;
 };

@@ -12,9 +12,11 @@
 #include <QSet>
 #include <QMap>
 #include <QVector>
+#include <QMdiSubWindow>
 #include <vector>
 #include <map>
 #include <unordered_set>
+#include <deque>
 
 #include "ClassDefinition.h"
 #include "ClassEditorDialog.h"
@@ -47,6 +49,7 @@ namespace MaastoPlugin
 
         void updateCloud( ccPointCloud *cloud );
         bool isUpdatingCloud() const { return m_updatingCloud; }
+        void createSelectionWindow(); // luo tyhjän View 2 -ikkunan (ei sisältöä)
 
     private:
         void populateComboBox( QComboBox *comboBox, const QString &keepField = QString() );
@@ -59,6 +62,7 @@ namespace MaastoPlugin
         void applyShowFilter();
         void resetVisibility();
         void performClassification();
+        void undoClassification();
 
         QSet<float> getCheckedValues() const;
         ccPointCloud* createFilteredHighlight( const QSet<float>& selectedValues );
@@ -78,6 +82,7 @@ namespace MaastoPlugin
 
         // Poistaa kaikki piirretyt 3D-muodot ja highlight-pistepilvet
         void clearSelection();
+        void removeLastSelection();
 
         // "Näytä vain valinta" -tila
         void enableShowOnlyMode( bool resetCamera = false );
@@ -203,11 +208,16 @@ namespace MaastoPlugin
         PolygonDrawer      *m_polygonDrawer;
         QPushButton        *m_polygonButton;
         QPushButton        *m_highlightButton;
+        QPushButton        *m_removeLastSelectionButton = nullptr;
         QPushButton        *m_clearSelectionButton;
-        QPushButton        *m_showOnlyButton;
-        QCheckBox          *m_separateWindowCheckBox;
         QPushButton        *m_fileButton;
         QSpinBox           *m_minPolygonCountSpinBox;
+        QPushButton        *m_undoClassificationButton = nullptr;
+
+        // Luokittelun undo-pino: enintään kMaxClassificationUndoLevels snapshotia
+        // Jokainen alkio on kopio koko scalar-kentän arvoista ennen luokittelua
+        static constexpr int kMaxClassificationUndoLevels = 5;
+        std::deque<std::vector<float>> m_classificationUndoStack;
 
         QDoubleSpinBox     *m_nearDistSpinBox;
         QDoubleSpinBox     *m_farDistSpinBox;
@@ -257,7 +267,6 @@ namespace MaastoPlugin
         // "Näytä valinta" -tila
         bool                          m_showOnlyMode;           // onko tila päällä
         bool                          m_lockViewMode;           // onko näkymä lukittu (aina true kun showOnly päällä)
-        bool                          m_view2Frozen;            // View 2:n pistepilvi jäädytetty (erillinen ikkuna -tila)
         bool                          m_selectionWindowIsOwned; // true = MDI-ikkuna luotu createGLWindow():lla
         ccPointCloud                 *m_selectionOnlyCloud;     // väliaikainen pilvi "vain valinta" -tilaan
         ccGLWindowInterface          *m_selectionGLWindow;      // 3D-ikkuna jossa valinta näytetään
@@ -266,6 +275,15 @@ namespace MaastoPlugin
 
         // Ikkuna johon mittaus/viiva-työkalu on kytketty (tallennetaan start-hetkellä)
         ccGLWindowInterface          *m_workingGLWindow;
+
+        // View1:n MDI-subwindow — tallennetaan createSelectionWindow():ssa
+        // jotta polygon/viiva-työkalu voi aktivoida sen ennen piirtoa
+        QMdiSubWindow                *m_view1SubWindow = nullptr;
+
+        // Polygon-ikkunavalinta: true kun nappi on painettu mutta käyttäjä ei ole
+        // vielä valinnut ikkunaa. startDrawing() kutsutaan vasta kun MDI-ikkuna aktivoituu.
+        bool                          m_waitingForWindowSelection = false;
+        QMetaObject::Connection       m_windowSelectionConnection; // tilapäinen subWindowActivated-yhteys
 
         // Lukittu valintajoukko (otetaan snapshotina kun "Näytä valinta" aktivoituu)
         std::unordered_set<unsigned>  m_lockedIndices;          // snapshot lukitushetkellä
@@ -290,6 +308,7 @@ namespace MaastoPlugin
         QCheckBox          *m_extendLineToBBoxCheckBox; // "Jatka viivan pituutta"
 
         int                 m_linePickState;          // 0=ei aktiivinen, 1=odottaa P1, 2=odottaa P2
+        bool                m_lineDrawnInView1;       // true = viiva piirrettiin View 1:ssä
         CCVector3           m_lineP1;                 // 1. valittu piste 3D-maailmassa
         CCVector3           m_lineP2;                 // 2. valittu piste 3D-maailmassa
         ccHObject          *m_linePoint1Highlight;   // highlight-dot P1:lle

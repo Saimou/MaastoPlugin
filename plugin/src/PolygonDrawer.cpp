@@ -15,6 +15,7 @@ PolygonDrawer::PolygonDrawer( ccMainAppInterface *app, QObject *parent )
     , m_previousPolyline( nullptr )
     , m_previousGLWindow( nullptr )
     , m_drawing( false )
+    , m_savedPickingMode( ccGLWindowInterface::DEFAULT_PICKING )
 {
     // Kytketään kamera-signaalit heti konstruktorissa — näin valmis polygon
     // häviää aina kun kameraa liikutetaan, myös piirtomoodin ulkopuolella.
@@ -39,12 +40,13 @@ PolygonDrawer::~PolygonDrawer()
     m_previousGLWindow = nullptr;
 }
 
-void PolygonDrawer::startDrawing()
+void PolygonDrawer::startDrawing( ccGLWindowInterface *targetWindow )
 {
     if ( m_drawing )
         stopDrawing();
 
-    m_glWindow = m_app->getActiveGLWindow();
+    // Käytä annettua ikkunaa, tai fallback aktiiviseen ikkunaan
+    m_glWindow = targetWindow ? targetWindow : m_app->getActiveGLWindow();
     if ( !m_glWindow )
     {
         m_app->dispToConsole( "MaastoPlugin: ei aktiivista 3D-ikkunaa",
@@ -71,6 +73,10 @@ void PolygonDrawer::startDrawing()
 
     m_glWindow->addToOwnDB( m_polyline );
 
+    // Tallenna alkuperäinen picking-moodi — palautetaan stopDrawing():ssa,
+    // jotta esim. View 2:n POINT_PICKING säilyy piirtämisen jälkeen.
+    m_savedPickingMode = m_glWindow->getPickingMode();
+
     // Aktivoi mouse-signaalit
     m_glWindow->setPickingMode( ccGLWindowInterface::NO_PICKING );
     m_glWindow->setInteractionMode( ccGLWindowInterface::INTERACT_SEND_ALL_SIGNALS );
@@ -96,11 +102,12 @@ void PolygonDrawer::stopDrawing()
 
     disconnectFromWindow();
 
-    // Palauta normaali tila
+    // Palauta normaali tila — käytetään tallennettua picking-moodia jotta
+    // esim. View 2:n POINT_PICKING ei tuhoudu piirtämisen jälkeen.
     if ( m_glWindow )
     {
         m_glWindow->setInteractionMode( ccGLWindowInterface::MODE_TRANSFORM_CAMERA );
-        m_glWindow->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
+        m_glWindow->setPickingMode( m_savedPickingMode );
         m_glWindow->doReleaseMouse();
     }
 
@@ -256,10 +263,11 @@ void PolygonDrawer::onRightClick( int /*x*/, int /*y*/ )
     m_polyline->setClosed( true );
     m_glWindow->redraw( true, false );
 
-    // Katkaise signaalit ja palauta normaali tila
+    // Katkaise signaalit ja palauta normaali tila — palautetaan tallennettu
+    // picking-moodi jotta View 2:n POINT_PICKING säilyy piirtämisen jälkeen.
     disconnectFromWindow();
     m_glWindow->setInteractionMode( ccGLWindowInterface::MODE_TRANSFORM_CAMERA );
-    m_glWindow->setPickingMode( ccGLWindowInterface::DEFAULT_PICKING );
+    m_glWindow->setPickingMode( m_savedPickingMode );
 
     // Tallenna suljetun polygonin 2D-kulmapisteet VolumeBuilder-käyttöön.
     // m_vertices->size() - 1 jättää rubber-band pisteen pois (se on viimeinen
