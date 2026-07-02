@@ -19,6 +19,8 @@
 #include <QMainWindow>
 #include <QMdiArea>
 #include <QMdiSubWindow>
+#include <QMenu>
+#include <QAction>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -990,91 +992,62 @@ namespace MaastoPlugin
                 m_drawLineButton->setChecked( false );
                 m_drawLineButton->blockSignals( false );
 
-                // Vaihe 1: odota käyttäjän ikkunavalintaa.
-                // Piirtäminen alkaa vasta kun käyttäjä klikkaa jotakin 3D-ikkunaa
-                // (View 1 tai View 2). subWindowActivated laukeaa kun MDI-ikkuna aktivoituu.
-                m_appInterface->dispToConsole(
-                    "MaastoPlugin [Polygon]: Valitse ikkuna klikkaamalla siihen — "
-                    "piirto alkaa valitussa ikkunassa. "
-                    "Paina nappia uudelleen peruuttaaksesi.",
-                    ccMainAppInterface::STD_CONSOLE_MESSAGE );
+                // Näytä popup-valikko josta käyttäjä valitsee kohdeikkunan.
+                // QMenu::exec() on synkroninen — ei tarvita subWindowActivated-logiikkaa.
+                QMenu *menu = new QMenu( m_polygonButton );
+                QAction *actView1 = menu->addAction( "View 1 — pääikkuna" );
+                QAction *actView2 = menu->addAction( "View 2 — valintaikkuna" );
 
-                m_waitingForWindowSelection = true;
+                // View 2 on käytettävissä vain jos se on jo luotu
+                actView2->setEnabled( m_selectionGLWindow != nullptr );
 
-                QMainWindow *mainWin = m_appInterface->getMainWindow();
-                QMdiArea *mdiArea = qobject_cast<QMdiArea*>(
-                    mainWin ? mainWin->centralWidget() : nullptr );
+                // Näytä valikko napin alapuolella
+                QAction *chosen = menu->exec(
+                    m_polygonButton->mapToGlobal(
+                        QPoint( 0, m_polygonButton->height() ) ) );
 
-                if ( mdiArea )
+                // Jos käyttäjä sulki valikon valitsematta mitään, palauta nappi ylös
+                if ( !chosen )
                 {
-                    m_windowSelectionConnection = connect(
-                        mdiArea, &QMdiArea::subWindowActivated,
-                        this, [this, mdiArea]( QMdiSubWindow *sub )
-                        {
-                            if ( !m_waitingForWindowSelection )
-                                return;
-
-                            // Tunnista aktivoitunut ikkuna: View 2 vai View 1
-                            ccGLWindowInterface *targetWin = nullptr;
-                            if ( sub && m_selectionGLWindow && m_selectionGLWidget )
-                            {
-                                QWidget *sw = sub->widget();
-                                if ( sw && ( sw == m_selectionGLWidget
-                                             || sw->isAncestorOf( m_selectionGLWidget )
-                                             || m_selectionGLWidget->isAncestorOf( sw ) ) )
-                                {
-                                    targetWin = m_selectionGLWindow;
-                                }
-                            }
-                            if ( !targetWin )
-                                targetWin = ( m_cloud && m_cloud->getDisplay() )
-                                    ? static_cast<ccGLWindowInterface*>( m_cloud->getDisplay() )
-                                    : m_appInterface->getActiveGLWindow();
-
-                            // Katkaistaan yhteys ennen startDrawing() — kertalaukaisu
-                            m_waitingForWindowSelection = false;
-                            disconnect( m_windowSelectionConnection );
-
-                            // Kerro consolessa mihin ikkunaan piirretään ja ohjeet
-                            if ( targetWin == m_selectionGLWindow )
-                                m_appInterface->dispToConsole(
-                                    "MaastoPlugin [Polygon]: Piirretään View 2:een — "
-                                    "vasen hiiri lisää kulmapisteen, oikea hiiri sulkee polygonin",
-                                    ccMainAppInterface::STD_CONSOLE_MESSAGE );
-                            else
-                                m_appInterface->dispToConsole(
-                                    "MaastoPlugin [Polygon]: Piirretään View 1:een — "
-                                    "vasen hiiri lisää kulmapisteen, oikea hiiri sulkee polygonin",
-                                    ccMainAppInterface::STD_CONSOLE_MESSAGE );
-
-                            m_polygonDrawer->startDrawing( targetWin );
-                        } );
+                    m_polygonButton->blockSignals( true );
+                    m_polygonButton->setChecked( false );
+                    m_polygonButton->blockSignals( false );
+                    return;
                 }
-                else
+
+                // Määritä kohdeikkuna valinnan perusteella
+                ccGLWindowInterface *targetWin = nullptr;
+                if ( chosen == actView1 )
                 {
-                    // Ei MDI-aluetta — aloita suoraan aktiivisessa ikkunassa
-                    m_waitingForWindowSelection = false;
-                    ccGLWindowInterface *targetWin = ( m_cloud && m_cloud->getDisplay() )
+                    targetWin = ( m_cloud && m_cloud->getDisplay() )
                         ? static_cast<ccGLWindowInterface*>( m_cloud->getDisplay() )
                         : m_appInterface->getActiveGLWindow();
                     m_appInterface->dispToConsole(
-                        "MaastoPlugin [Polygon]: Piirretään aktiiviseen ikkunaan — "
+                        "MaastoPlugin [Polygon]: Piirretään View 1:een — "
                         "vasen hiiri lisää kulmapisteen, oikea hiiri sulkee polygonin",
                         ccMainAppInterface::STD_CONSOLE_MESSAGE );
-                    m_polygonDrawer->startDrawing( targetWin );
                 }
+                else // actView2
+                {
+                    targetWin = m_selectionGLWindow;
+                    m_appInterface->dispToConsole(
+                        "MaastoPlugin [Polygon]: Piirretään View 2:een — "
+                        "vasen hiiri lisää kulmapisteen, oikea hiiri sulkee polygonin",
+                        ccMainAppInterface::STD_CONSOLE_MESSAGE );
+                }
+
+                if ( !targetWin )
+                {
+                    m_polygonButton->blockSignals( true );
+                    m_polygonButton->setChecked( false );
+                    m_polygonButton->blockSignals( false );
+                    return;
+                }
+
+                m_polygonDrawer->startDrawing( targetWin );
             }
             else
             {
-                // Peruuta ikkunavalinta-odotus jos se on päällä
-                if ( m_waitingForWindowSelection )
-                {
-                    m_waitingForWindowSelection = false;
-                    disconnect( m_windowSelectionConnection );
-                    m_appInterface->dispToConsole(
-                        "MaastoPlugin [Polygon]: piirto peruutettu",
-                        ccMainAppInterface::STD_CONSOLE_MESSAGE );
-                }
                 m_polygonDrawer->stopDrawing();
             }
         } );

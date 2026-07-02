@@ -280,10 +280,7 @@ namespace MaastoPlugin
         // jotta polygon/viiva-työkalu voi aktivoida sen ennen piirtoa
         QMdiSubWindow                *m_view1SubWindow = nullptr;
 
-        // Polygon-ikkunavalinta: true kun nappi on painettu mutta käyttäjä ei ole
-        // vielä valinnut ikkunaa. startDrawing() kutsutaan vasta kun MDI-ikkuna aktivoituu.
-        bool                          m_waitingForWindowSelection = false;
-        QMetaObject::Connection       m_windowSelectionConnection; // tilapäinen subWindowActivated-yhteys
+
 
         // Lukittu valintajoukko (otetaan snapshotina kun "Näytä valinta" aktivoituu)
         std::unordered_set<unsigned>  m_lockedIndices;          // snapshot lukitushetkellä
