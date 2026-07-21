@@ -130,7 +130,8 @@ jobs:
             -S laszip-src \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=laszip-install
+            -DCMAKE_INSTALL_PREFIX=laszip-install \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build laszip-src/build --parallel
           cmake --install laszip-src/build
           # Viedään polut ympäristömuuttujiksi seuraavia vaiheita varten
