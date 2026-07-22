@@ -276,6 +276,9 @@ namespace MaastoPlugin
         // Ikkuna johon mittaus/viiva-työkalu on kytketty (tallennetaan start-hetkellä)
         ccGLWindowInterface          *m_workingGLWindow;
 
+        // Ikkunavalikosta valittu kohdeikkuna viiva-työkalulle (nollataan stopLinePicking():ssa)
+        ccGLWindowInterface          *m_lineTargetWindow = nullptr;
+
         // View1:n MDI-subwindow — tallennetaan createSelectionWindow():ssa
         // jotta polygon/viiva-työkalu voi aktivoida sen ennen piirtoa
         QMdiSubWindow                *m_view1SubWindow = nullptr;

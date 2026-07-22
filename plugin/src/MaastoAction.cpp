@@ -1069,6 +1069,57 @@ namespace MaastoPlugin
                 m_polygonButton->setChecked( false );
                 m_polygonButton->blockSignals( false );
 
+                // Näytä popup-valikko josta käyttäjä valitsee kohdeikkunan.
+                // QMenu::exec() on synkroninen — sama logiikka kuin polygon-työkalussa.
+                QMenu *menu = new QMenu( m_drawLineButton );
+                QAction *actView1 = menu->addAction( "View 1 — pääikkuna" );
+                QAction *actView2 = menu->addAction( "View 2 — valintaikkuna" );
+
+                // View 2 on käytettävissä vain jos se on jo luotu
+                actView2->setEnabled( m_selectionGLWindow != nullptr );
+
+                // Näytä valikko napin alapuolella
+                QAction *chosen = menu->exec(
+                    m_drawLineButton->mapToGlobal(
+                        QPoint( 0, m_drawLineButton->height() ) ) );
+
+                // Jos käyttäjä sulki valikon valitsematta mitään, palauta nappi ylös
+                if ( !chosen )
+                {
+                    m_drawLineButton->blockSignals( true );
+                    m_drawLineButton->setChecked( false );
+                    m_drawLineButton->blockSignals( false );
+                    return;
+                }
+
+                // Tallenna valittu kohdeikkuna — startLinePicking() käyttää sitä
+                if ( chosen == actView1 )
+                {
+                    m_lineTargetWindow = ( m_cloud && m_cloud->getDisplay() )
+                        ? static_cast<ccGLWindowInterface*>( m_cloud->getDisplay() )
+                        : m_appInterface->getActiveGLWindow();
+                    m_appInterface->dispToConsole(
+                        "MaastoPlugin [Viiva]: Valitaan pisteet View 1:stä — "
+                        "klikkaa ensimmäinen piste, sitten toinen",
+                        ccMainAppInterface::STD_CONSOLE_MESSAGE );
+                }
+                else // actView2
+                {
+                    m_lineTargetWindow = m_selectionGLWindow;
+                    m_appInterface->dispToConsole(
+                        "MaastoPlugin [Viiva]: Valitaan pisteet View 2:sta — "
+                        "klikkaa ensimmäinen piste, sitten toinen",
+                        ccMainAppInterface::STD_CONSOLE_MESSAGE );
+                }
+
+                if ( !m_lineTargetWindow )
+                {
+                    m_drawLineButton->blockSignals( true );
+                    m_drawLineButton->setChecked( false );
+                    m_drawLineButton->blockSignals( false );
+                    return;
+                }
+
                 startLinePicking();
             }
             else
@@ -3904,23 +3955,9 @@ namespace MaastoPlugin
         removeLineHighlights();
         m_linePickState = 1;
 
-        // Aktivoi View1:n MDI-subwindow ennen point pickingiin siirtymistä.
-        if ( m_view1SubWindow )
-        {
-            QMainWindow *mainWin = m_appInterface->getMainWindow();
-            QMdiArea *mdiArea = qobject_cast<QMdiArea*>(
-                mainWin ? mainWin->centralWidget() : nullptr );
-            if ( mdiArea )
-                mdiArea->setActiveSubWindow( m_view1SubWindow );
-            if ( m_view1SubWindow->widget() )
-                m_view1SubWindow->widget()->setFocus( Qt::MouseFocusReason );
-        }
-
-        // Käytä aina View1:tä (m_cloud->getDisplay()), ei aktiivista ikkunaa.
-        // Näin viiva-työkalu toimii oikein myös silloin kun View2 on fokuksessa.
-        ccGLWindowInterface *win = ( m_cloud && m_cloud->getDisplay() )
-            ? static_cast<ccGLWindowInterface*>( m_cloud->getDisplay() )
-            : m_appInterface->getActiveGLWindow();
+        // Käytä ikkunavalikosta valittua ikkunaa (m_lineTargetWindow).
+        // Asetetaan toggled-lambdassa ennen startLinePicking()-kutsua.
+        ccGLWindowInterface *win = m_lineTargetWindow;
         if ( !win )
         {
             stopLinePicking();
@@ -4017,6 +4054,7 @@ namespace MaastoPlugin
         // Irrota signaali siitä ikkunasta johon se kytkettiin
         ccGLWindowInterface *win = m_workingGLWindow;
         m_workingGLWindow = nullptr;
+        m_lineTargetWindow = nullptr;
         if ( win )
         {
             disconnect( win->signalEmitter(), &ccGLWindowSignalEmitter::itemPicked,
