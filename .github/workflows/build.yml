@@ -159,7 +159,8 @@ jobs:
             -DLASZIP_DLL="$LASZIP_DLL" \
             -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
             -DPLUGIN_IO_QCORE=ON \
-            -DPLUGIN_IO_QLAS=ON
+            -DPLUGIN_IO_QLAS=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
         shell: bash -l {0}
@@ -257,7 +258,8 @@ jobs:
             -DCMAKE_PREFIX_PATH="$Qt6_DIR;$CONDA_LIB_DIR" \
             -DEIGEN_ROOT_DIR="$EIGEN_ROOT_DIR" \
             -DPLUGIN_STANDARD_QMAASTOPLUGIN=ON \
-            -DPLUGIN_IO_QCORE=ON
+            -DPLUGIN_IO_QCORE=ON \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Build
         shell: bash -l {0}
