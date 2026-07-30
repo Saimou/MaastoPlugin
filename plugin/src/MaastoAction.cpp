@@ -602,8 +602,10 @@ namespace MaastoPlugin
                     m_listWidget->topLevelItem( i )->setCheckState( 1, state );
                 m_listWidget->blockSignals( false );
                 m_updatingShow = false;
+                m_updatingView1Only = true;
                 applyShowFilter();
                 refreshHighlights();
+                m_updatingView1Only = false;
             } );
 
         // Toggle: Valitse kaikki / Poista valinnat  (Valitse1-sarake, col 0)
@@ -624,7 +626,9 @@ namespace MaastoPlugin
                         m_checkedClassCodes.remove( code );
                 }
                 m_listWidget->blockSignals( false );
+                m_updatingView1Only = true;
                 refreshHighlights();
+                m_updatingView1Only = false;
             } );
 
         // Toggle: Show all 2 / Hide all 2  (Show2-sarake, col 3)
@@ -670,19 +674,21 @@ namespace MaastoPlugin
             {
                 if ( column == 1 )
                 {
-                    // Show1-sarakkeen muutos
+                    // Show1-sarakkeen muutos — ei vaikuta View 2:een
                     if ( m_updatingShow )
                         return;
                     m_showAllButton->blockSignals( true );
                     m_showAllButton->setChecked( false );
                     m_showAllButton->setText( "Show all" );
                     m_showAllButton->blockSignals( false );
+                    m_updatingView1Only = true;
                     applyShowFilter();
                     refreshHighlights();
+                    m_updatingView1Only = false;
                 }
                 else if ( column == 0 )
                 {
-                    // Valitse1-sarakkeen muutos — päivitä pysyvä valintamuisti
+                    // Valitse1-sarakkeen muutos — päivitä pysyvä valintamuisti, ei vaikuta View 2:een
                     const int code = item->text( 0 ).toInt();
                     if ( item->checkState( 0 ) == Qt::Checked )
                         m_checkedClassCodes.insert( code );
@@ -693,7 +699,9 @@ namespace MaastoPlugin
                     m_selectAllButton->setChecked( false );
                     m_selectAllButton->setText( "Valitse kaikki" );
                     m_selectAllButton->blockSignals( false );
+                    m_updatingView1Only = true;
                     refreshHighlights();
+                    m_updatingView1Only = false;
                 }
                 else if ( column == 3 )
                 {
@@ -3306,9 +3314,9 @@ namespace MaastoPlugin
             );
             m_highlightObjects.push_back( highlighted );
 
-            // Päivitä View 2:n pohjainen pilvi aina kun ikkuna on auki ja lockedIndices ei tyhjä
-            // (ei zoom — kamera pysyy paikallaan)
-            if ( m_selectionWindowIsOwned && m_selectionGLWindow && !m_lockedIndices.empty() )
+            // Päivitä View 2:n pohjainen pilvi — ei tehdä jos muutos tuli Valitse1/Show1-sarakkeesta
+            if ( !m_updatingView1Only &&
+                 m_selectionWindowIsOwned && m_selectionGLWindow && !m_lockedIndices.empty() )
             {
                 clearSelectionHighlights();
                 clearSelectionMeshes();
@@ -3334,8 +3342,9 @@ namespace MaastoPlugin
             // jotta pilvi pysyy näkyvissä seuraavaa enableShowOnlyMode()-kutsua varten
         }
 
-        // View 2:n highlight-kopiot synkronoidaan
-        syncHighlightsToSelectionWindow();
+        // View 2:n highlight-kopiot synkronoidaan — ei tehdä jos muutos tuli Valitse1/Show1-sarakkeesta
+        if ( !m_updatingView1Only )
+            syncHighlightsToSelectionWindow();
 
         // Ei kutsuta updateUI():ta tässä — se triggeröisi onNewSelection() → updateCloud()
         // → populateColorComboBox() → applyColorField() → updateUI() silmukan
@@ -3578,8 +3587,9 @@ namespace MaastoPlugin
         m_updatingCloud = false;
         m_appInterface->refreshAll();
 
-        // Päivitä View 2 jos auki
-        refreshSelectionWindow();
+        // Päivitä View 2 jos auki — ei tehdä jos muutos tuli Show1-sarakkeesta
+        if ( !m_updatingView1Only )
+            refreshSelectionWindow();
     }
 
     // ----------------------------------------------------------------
@@ -3655,7 +3665,8 @@ namespace MaastoPlugin
             m_cloud->unallocateVisibilityArray();
             m_cloud->prepareDisplayForRefresh();
             m_appInterface->refreshAll();
-            refreshSelectionWindow();
+            if ( !m_updatingView1Only )
+                refreshSelectionWindow();
         }
         else if ( subCloudChanged )
         {
@@ -3663,7 +3674,8 @@ namespace MaastoPlugin
             m_appInterface->updateUI();
             m_updatingCloud = false;
             m_appInterface->refreshAll();
-            refreshSelectionWindow();
+            if ( !m_updatingView1Only )
+                refreshSelectionWindow();
         }
     }
 

@@ -189,7 +189,8 @@ namespace MaastoPlugin
         bool                m_updatingCloud;
         bool                m_updatingVisibility;
         bool                m_updatingShow;
-        bool                m_updatingShow2    = false;
+        bool                m_updatingShow2      = false;
+        bool                m_updatingView1Only  = false; // true = Valitse1/Show1-muutos, ei vaikuta View 2:een
         bool                m_ptcColorsApplied;
         bool                m_hadColorsBeforePtc;  // oliko RGB-taulukko olemassa ennen ptc-väritystä
         QVector<ccColor::Rgb> m_savedColors;        // alkuperäiset vertex-RGB-värit
