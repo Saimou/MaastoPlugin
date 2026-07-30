@@ -2992,35 +2992,16 @@ namespace MaastoPlugin
 
         clearSelectionHighlights();
 
-        for ( ccHObject *src : m_highlightObjects )
+        // View 2:n highlight rakennetaan Valitse2-sarakkeen (col 2) valinnoista,
+        // ei kopioimalla Valitse1-highlighteja. Näin View 2:ssa korostuvat
+        // eri luokat kuin View 1:ssä.
+        const QSet<float> selectedValues2 = getCheckedValues2();
+        ccPointCloud *highlight2 = createFilteredHighlight( selectedValues2 );
+        if ( highlight2 )
         {
-            ccPointCloud *srcCloud = dynamic_cast<ccPointCloud*>( src );
-            if ( !srcCloud )
-                continue;
-
-            ccPointCloud *copy = new ccPointCloud( srcCloud->getName() + "_v2" );
-            if ( !copy->reserve( srcCloud->size() ) )
-            {
-                delete copy;
-                continue;
-            }
-
-            // Kopioi pisteet
-            for ( unsigned i = 0; i < srcCloud->size(); ++i )
-                copy->addPoint( *srcCloud->getPoint( i ) );
-
-            // Kopioi värit
-            if ( srcCloud->hasColors() && copy->reserveTheRGBTable() )
-            {
-                for ( unsigned i = 0; i < srcCloud->size(); ++i )
-                    copy->addColor( srcCloud->getPointColor( i ) );
-                copy->showColors( true );
-            }
-
-            copy->setPointSize( srcCloud->getPointSize() );
-            copy->setDisplay( m_selectionGLWindow );
-            m_selectionGLWindow->addToOwnDB( copy, true );
-            m_selectionHighlightObjects.push_back( copy );
+            highlight2->setDisplay( m_selectionGLWindow );
+            m_selectionGLWindow->addToOwnDB( highlight2, true );
+            m_selectionHighlightObjects.push_back( highlight2 );
         }
 
         m_selectionGLWindow->redraw();
