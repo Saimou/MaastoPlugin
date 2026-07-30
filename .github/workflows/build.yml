@@ -22,8 +22,15 @@ jobs:
         with:
           repository: CloudCompare/CloudCompare
           ref: v2.13.2
-          submodules: recursive
+          submodules: false
           path: CloudCompare
+
+      - name: Init submodules (jätetään gitlab.univ-nantes.fr pois)
+        working-directory: CloudCompare
+        run: |
+          git submodule init
+          git submodule deinit plugins/core/Standard/qColorimetricSegmenter
+          git submodule update --recursive --depth=1
 
       - name: Install dependencies
         run: |
@@ -87,8 +94,16 @@ jobs:
         with:
           repository: CloudCompare/CloudCompare
           ref: v2.13.2
-          submodules: recursive
+          submodules: false
           path: CloudCompare
+
+      - name: Init submodules (jätetään gitlab.univ-nantes.fr pois)
+        working-directory: CloudCompare
+        shell: bash
+        run: |
+          git submodule init
+          git submodule deinit plugins/core/Standard/qColorimetricSegmenter
+          git submodule update --recursive --depth=1
 
       - name: Install Qt 5.15.2 (msvc2019_64)
         uses: jurplel/install-qt-action@v3
@@ -205,8 +220,16 @@ jobs:
         with:
           repository: CloudCompare/CloudCompare
           ref: '5cba96f477d139fd3f917dd5b84eab99d0606938'
-          submodules: recursive
+          submodules: false
           path: CloudCompare
+
+      - name: Init submodules (jätetään gitlab.univ-nantes.fr pois)
+        working-directory: CloudCompare
+        shell: bash
+        run: |
+          git submodule init
+          git submodule deinit plugins/core/Standard/qColorimetricSegmenter
+          git submodule update --recursive --depth=1
 
       - name: Install Qt 6.8.3 (msvc2022_64) Qt:n omalta serveriltä
         uses: jurplel/install-qt-action@v4
