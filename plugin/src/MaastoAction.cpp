@@ -603,6 +603,7 @@ namespace MaastoPlugin
                 m_listWidget->blockSignals( false );
                 m_updatingShow = false;
                 applyShowFilter();
+                refreshHighlights();
             } );
 
         // Toggle: Valitse kaikki / Poista valinnat  (Valitse1-sarake, col 0)
@@ -639,6 +640,7 @@ namespace MaastoPlugin
                 m_listWidget->blockSignals( false );
                 m_updatingShow2 = false;
                 applyShowFilter2();
+                refreshHighlights();
             } );
 
         // Toggle: Valitse kaikki 2 / Poista valinnat 2  (Valitse2-sarake, col 2)
@@ -676,6 +678,7 @@ namespace MaastoPlugin
                     m_showAllButton->setText( "Show all" );
                     m_showAllButton->blockSignals( false );
                     applyShowFilter();
+                    refreshHighlights();
                 }
                 else if ( column == 0 )
                 {
@@ -702,6 +705,7 @@ namespace MaastoPlugin
                     m_showAllButton2->setText( "Show all 2" );
                     m_showAllButton2->blockSignals( false );
                     applyShowFilter2();
+                    refreshHighlights();
                 }
                 else if ( column == 2 )
                 {
