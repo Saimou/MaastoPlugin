@@ -488,6 +488,21 @@ namespace MaastoPlugin
             m_editClassesButton->setEnabled( false ); // aktivoituu kun .ptc ladattu
             arvoHeader->addWidget( m_editClassesButton );
             topPaneLayout->addLayout( arvoHeader );
+
+            // View 2 -napit (Valitse2 / Show2)
+            QHBoxLayout *arvoHeader2 = new QHBoxLayout();
+            arvoHeader2->addWidget( new QLabel( "View 2:", topPane ) );
+            m_selectAllButton2 = new QPushButton( "Valitse kaikki 2", topPane );
+            m_selectAllButton2->setCheckable( true );
+            m_selectAllButton2->setFixedHeight( 22 );
+            arvoHeader2->addWidget( m_selectAllButton2 );
+            m_showAllButton2 = new QPushButton( "Hide all 2", topPane );
+            m_showAllButton2->setCheckable( true );
+            m_showAllButton2->setChecked( true );
+            m_showAllButton2->setFixedHeight( 22 );
+            arvoHeader2->addWidget( m_showAllButton2 );
+            arvoHeader2->addStretch();
+            topPaneLayout->addLayout( arvoHeader2 );
         }
         m_listWidget = new QTreeWidget( topPane );
         m_listWidget->setMinimumHeight( 60 );
@@ -575,7 +590,7 @@ namespace MaastoPlugin
         connect( m_editClassesButton, &QPushButton::clicked,
             this, &MaastoDialog::onEditClasses );
 
-        // Toggle: Show all / Hide all  (Show-sarake)
+        // Toggle: Show all / Hide all  (Show1-sarake, col 1)
         connect( m_showAllButton, &QPushButton::toggled,
             [this]( bool checked )
             {
@@ -590,7 +605,7 @@ namespace MaastoPlugin
                 applyShowFilter();
             } );
 
-        // Toggle: Valitse kaikki / Poista valinnat  (Value-sarake)
+        // Toggle: Valitse kaikki / Poista valinnat  (Valitse1-sarake, col 0)
         connect( m_selectAllButton, &QPushButton::toggled,
             [this]( bool checked )
             {
@@ -611,16 +626,51 @@ namespace MaastoPlugin
                 refreshHighlights();
             } );
 
-        // itemChanged: erottele Value-sarake (col 0) ja Show-sarake (col 1)
+        // Toggle: Show all 2 / Hide all 2  (Show2-sarake, col 3)
+        connect( m_showAllButton2, &QPushButton::toggled,
+            [this]( bool checked )
+            {
+                m_showAllButton2->setText( checked ? "Hide all 2" : "Show all 2" );
+                const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
+                m_updatingShow2 = true;
+                m_listWidget->blockSignals( true );
+                for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+                    m_listWidget->topLevelItem( i )->setCheckState( 3, state );
+                m_listWidget->blockSignals( false );
+                m_updatingShow2 = false;
+                applyShowFilter2();
+            } );
+
+        // Toggle: Valitse kaikki 2 / Poista valinnat 2  (Valitse2-sarake, col 2)
+        connect( m_selectAllButton2, &QPushButton::toggled,
+            [this]( bool checked )
+            {
+                m_selectAllButton2->setText( checked ? "Poista valinnat 2" : "Valitse kaikki 2" );
+                const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
+                m_listWidget->blockSignals( true );
+                for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+                {
+                    QTreeWidgetItem *it = m_listWidget->topLevelItem( i );
+                    it->setCheckState( 2, state );
+                    const int code = it->text( 0 ).toInt();
+                    if ( checked )
+                        m_checkedClassCodes2.insert( code );
+                    else
+                        m_checkedClassCodes2.remove( code );
+                }
+                m_listWidget->blockSignals( false );
+                refreshHighlights();
+            } );
+
+        // itemChanged: erottele Valitse1 (col 0), Show1 (col 1), Valitse2 (col 2), Show2 (col 3)
         connect( m_listWidget, &QTreeWidget::itemChanged,
             [this]( QTreeWidgetItem *item, int column )
             {
                 if ( column == 1 )
                 {
-                    // Show-sarakkeen muutos
+                    // Show1-sarakkeen muutos
                     if ( m_updatingShow )
                         return;
-                    // Palauta Show all -nappi alkutilaan
                     m_showAllButton->blockSignals( true );
                     m_showAllButton->setChecked( false );
                     m_showAllButton->setText( "Show all" );
@@ -629,7 +679,7 @@ namespace MaastoPlugin
                 }
                 else if ( column == 0 )
                 {
-                    // Value-sarakkeen muutos — päivitä pysyvä valintamuisti
+                    // Valitse1-sarakkeen muutos — päivitä pysyvä valintamuisti
                     const int code = item->text( 0 ).toInt();
                     if ( item->checkState( 0 ) == Qt::Checked )
                         m_checkedClassCodes.insert( code );
@@ -640,6 +690,32 @@ namespace MaastoPlugin
                     m_selectAllButton->setChecked( false );
                     m_selectAllButton->setText( "Valitse kaikki" );
                     m_selectAllButton->blockSignals( false );
+                    refreshHighlights();
+                }
+                else if ( column == 3 )
+                {
+                    // Show2-sarakkeen muutos
+                    if ( m_updatingShow2 )
+                        return;
+                    m_showAllButton2->blockSignals( true );
+                    m_showAllButton2->setChecked( false );
+                    m_showAllButton2->setText( "Show all 2" );
+                    m_showAllButton2->blockSignals( false );
+                    applyShowFilter2();
+                }
+                else if ( column == 2 )
+                {
+                    // Valitse2-sarakkeen muutos — päivitä pysyvä valintamuisti
+                    const int code = item->text( 0 ).toInt();
+                    if ( item->checkState( 2 ) == Qt::Checked )
+                        m_checkedClassCodes2.insert( code );
+                    else
+                        m_checkedClassCodes2.remove( code );
+
+                    m_selectAllButton2->blockSignals( true );
+                    m_selectAllButton2->setChecked( false );
+                    m_selectAllButton2->setText( "Valitse kaikki 2" );
+                    m_selectAllButton2->blockSignals( false );
                     refreshHighlights();
                 }
             } );
@@ -829,13 +905,18 @@ namespace MaastoPlugin
                 QIcon( ":/CC/plugin/qMaastoPlugin/images/icon.png" ) );
         } );
 
-        // Iso nappi + "Luokittele"-teksti allekkain
+        // Iso nappi + "Luokittele"-teksti + ikkunavalinta allekkain
         QVBoxLayout *actionCol = new QVBoxLayout();
         actionCol->setAlignment( Qt::AlignHCenter );
         actionCol->addWidget( actionButton );
         QLabel *actionLabel = new QLabel( "Luokittele", this );
         actionLabel->setAlignment( Qt::AlignHCenter );
         actionCol->addWidget( actionLabel );
+        m_classifyWindowCombo = new QComboBox( this );
+        m_classifyWindowCombo->addItem( "View 2 (valintaikkuna)", 2 );
+        m_classifyWindowCombo->addItem( "View 1 (pääikkuna)",     1 );
+        m_classifyWindowCombo->setFixedHeight( 22 );
+        actionCol->addWidget( m_classifyWindowCombo );
         buttonRow->addLayout( actionCol );
 
         layout->addLayout( buttonRow );
@@ -1396,7 +1477,7 @@ namespace MaastoPlugin
         // Laske pisteiden määrät ennen listan täyttöä
         computeClassCounts( fieldName );
 
-        // Päivitä pysyvä valintamuisti listasta ennen tyhjennystä
+        // Päivitä pysyvät valintamuistit listasta ennen tyhjennystä
         // (käyttäjä on saattanut muuttaa valintoja suoraan listasta ilman signaaleja)
         for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
         {
@@ -1406,16 +1487,24 @@ namespace MaastoPlugin
                 m_checkedClassCodes.insert( code );
             else
                 m_checkedClassCodes.remove( code );
+            if ( m_listWidget->columnCount() >= 3 )
+            {
+                if ( it->checkState( 2 ) == Qt::Checked )
+                    m_checkedClassCodes2.insert( code );
+                else
+                    m_checkedClassCodes2.remove( code );
+            }
         }
 
-        // Tallenna nykyiset Show-tilat (col 1) ennen tyhjennystä
+        // Tallenna nykyiset Show1- (col 1) ja Show2-tilat (col 3) ennen tyhjennystä
         for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
         {
             const QTreeWidgetItem *item = m_listWidget->topLevelItem( i );
             const QString key = item->text( 0 );
-            // Vain jos Show-sarake on olemassa (columnCount >= 2)
             if ( m_listWidget->columnCount() >= 2 )
-                m_showStates[key] = ( item->checkState( 1 ) == Qt::Checked );
+                m_showStates[key]  = ( item->checkState( 1 ) == Qt::Checked );
+            if ( m_listWidget->columnCount() >= 4 )
+                m_showStates2[key] = ( item->checkState( 3 ) == Qt::Checked );
         }
 
         m_listWidget->blockSignals( true );
@@ -1452,36 +1541,42 @@ namespace MaastoPlugin
         const bool hasCloud = ( m_cloud != nullptr ) && !values.isEmpty();
 
         // Sarakeindeksit:
-        //   isClassif: Value=0, Show=1, Name=2, Color=3, Koko=4, Count=5
-        //   muu:       Value=0, Show=1, Count=2
+        //   isClassif: Valitse1=0, Show1=1, Valitse2=2, Show2=3, Name=4, Color=5, Koko=6, Count=7
+        //   muu:       Valitse1=0, Show1=1, Valitse2=2, Show2=3, Count=4
         if ( hasCloud )
         {
             if ( isClassif )
             {
-                // Value | Show | Name | Color | Koko | Count
-                m_listWidget->setColumnCount( 6 );
+                // Valitse1 | Show1 | Valitse2 | Show2 | Name | Color | Koko | Count
+                m_listWidget->setColumnCount( 8 );
                 m_listWidget->setHeaderHidden( false );
-                m_listWidget->setHeaderLabels( { "Value", "Show", "Name", "Color", "Koko", "Count" } );
+                m_listWidget->setHeaderLabels(
+                    { "Valitse1", "Show1", "Valitse2", "Show2", "Name", "Color", "Koko", "Count" } );
                 m_listWidget->header()->setStretchLastSection( false );
                 m_listWidget->header()->setSectionResizeMode( QHeaderView::Interactive );
-                m_listWidget->header()->resizeSection( 0, 50 );
-                m_listWidget->header()->resizeSection( 1, 40 );
-                m_listWidget->header()->resizeSection( 2, 120 );
-                m_listWidget->header()->resizeSection( 3, 40 );
-                m_listWidget->header()->resizeSection( 4, 65 );
-                m_listWidget->header()->resizeSection( 5, 55 );
+                m_listWidget->header()->resizeSection( 0, 60 );  // Valitse1
+                m_listWidget->header()->resizeSection( 1, 45 );  // Show1
+                m_listWidget->header()->resizeSection( 2, 60 );  // Valitse2
+                m_listWidget->header()->resizeSection( 3, 45 );  // Show2
+                m_listWidget->header()->resizeSection( 4, 110 ); // Name
+                m_listWidget->header()->resizeSection( 5, 40 );  // Color
+                m_listWidget->header()->resizeSection( 6, 55 );  // Koko
+                m_listWidget->header()->resizeSection( 7, 55 );  // Count
             }
             else
             {
-                // Value | Show | Count
-                m_listWidget->setColumnCount( 3 );
+                // Valitse1 | Show1 | Valitse2 | Show2 | Count
+                m_listWidget->setColumnCount( 5 );
                 m_listWidget->setHeaderHidden( false );
-                m_listWidget->setHeaderLabels( { "Value", "Show", "Count" } );
+                m_listWidget->setHeaderLabels(
+                    { "Valitse1", "Show1", "Valitse2", "Show2", "Count" } );
                 m_listWidget->header()->setStretchLastSection( false );
                 m_listWidget->header()->setSectionResizeMode( QHeaderView::Interactive );
-                m_listWidget->header()->resizeSection( 0, 120 );
-                m_listWidget->header()->resizeSection( 1, 40 );
-                m_listWidget->header()->resizeSection( 2, 55 );
+                m_listWidget->header()->resizeSection( 0, 60 );  // Valitse1
+                m_listWidget->header()->resizeSection( 1, 45 );  // Show1
+                m_listWidget->header()->resizeSection( 2, 60 );  // Valitse2
+                m_listWidget->header()->resizeSection( 3, 45 );  // Show2
+                m_listWidget->header()->resizeSection( 4, 55 );  // Count
             }
         }
         else
@@ -1512,7 +1607,7 @@ namespace MaastoPlugin
         {
             QTreeWidgetItem *item = new QTreeWidgetItem( m_listWidget );
 
-            // Value-sarake (col 0): checkbox luokittelua varten
+            // Valitse1-sarake (col 0): checkbox luokittelua varten (View 1)
             // Jos m_checkedClassCodes on tyhjä (ensimmäinen täyttö), kaikki oletuksena Checked
             item->setFlags( item->flags() | Qt::ItemIsUserCheckable );
             const bool checked = m_checkedClassCodes.isEmpty()
@@ -1521,29 +1616,45 @@ namespace MaastoPlugin
             item->setCheckState( 0, checked ? Qt::Checked : Qt::Unchecked );
             item->setText( 0, val );
 
-            // Show-sarake (col 1): checkbox näkyvyyttä varten
+            // Show1-sarake (col 1): näkyvyys View 1:ssä
             if ( hasCloud )
             {
-                // Palauta tallennettu tila; uudet arvot näkyvissä oletuksena
                 const bool showVal = m_showStates.value( val, true );
                 item->setCheckState( 1, showVal ? Qt::Checked : Qt::Unchecked );
             }
 
+            // Valitse2-sarake (col 2): checkbox luokittelua varten (View 2)
+            if ( hasCloud )
+            {
+                const bool checked2 = m_checkedClassCodes2.isEmpty()
+                                      ? true
+                                      : m_checkedClassCodes2.contains( val.toInt() );
+                item->setCheckState( 2, checked2 ? Qt::Checked : Qt::Unchecked );
+            }
+
+            // Show2-sarake (col 3): näkyvyys View 2:ssa
+            if ( hasCloud )
+            {
+                const bool showVal2 = m_showStates2.value( val, true );
+                item->setCheckState( 3, showVal2 ? Qt::Checked : Qt::Unchecked );
+            }
+
             const int intVal = val.toInt();
 
+            // Name (col 4) ja Color (col 5) — vain isClassif
             if ( isClassif && m_classDefinitions.contains( intVal ) )
             {
                 const ClassDefinition &def = m_classDefinitions[intVal];
-                item->setText( 2, def.name );
+                item->setText( 4, def.name );
                 if ( def.color.isValid() )
                 {
                     QPixmap px( 20, 20 );
                     px.fill( def.color );
-                    item->setIcon( 3, QIcon( px ) );
+                    item->setIcon( 5, QIcon( px ) );
                 }
             }
 
-            // Koko-sarake (col 4): SpinBox kun isClassif
+            // Koko-sarake (col 6): SpinBox kun isClassif
             if ( isClassif && hasCloud )
             {
                 QSpinBox *sb = new QSpinBox( m_listWidget );
@@ -1552,9 +1663,8 @@ namespace MaastoPlugin
                 sb->setSpecialValueText( "Def" );
                 sb->setValue( m_classPointSizes.value( intVal, 0 ) );
                 sb->setFrame( false );
-                // Tallennetaan classCode SpinBoxiin jotta signaali löytää sen
                 sb->setProperty( "classCode", intVal );
-                m_listWidget->setItemWidget( item, 4, sb );
+                m_listWidget->setItemWidget( item, 6, sb );
 
                 connect( sb, QOverload<int>::of( &QSpinBox::valueChanged ),
                          this, [this, intVal]( int newSize )
@@ -1564,10 +1674,10 @@ namespace MaastoPlugin
                          } );
             }
 
-            // Count-sarake: oikea indeksi riippuu isClassif:stä
+            // Count-sarake: col 7 (isClassif) tai col 4 (muu)
             if ( hasCloud )
             {
-                const int countCol = isClassif ? 5 : 2;
+                const int countCol = isClassif ? 7 : 4;
                 const int count = m_classCounts.value( intVal, 0 );
                 item->setText( countCol, QString::number( count ) );
                 item->setTextAlignment( countCol, Qt::AlignRight | Qt::AlignVCenter );
@@ -1576,11 +1686,10 @@ namespace MaastoPlugin
 
         m_listWidget->blockSignals( false );
 
-        // Jos listassa on valittuja arvoja (palautettu edellisestä tilasta),
-        // päivitä korostus — itemChanged ei laukea signaalien ollessa blokattuna
+        // Päivitä korostukset
         refreshHighlights();
 
-        // Päivitä Show all -napin tila
+        // Päivitä Show1 all -napin tila
         if ( m_showAllButton && hasCloud )
         {
             bool anyHidden = false;
@@ -1596,6 +1705,24 @@ namespace MaastoPlugin
             m_showAllButton->setChecked( !anyHidden );
             m_showAllButton->setText( anyHidden ? "Show all" : "Hide all" );
             m_showAllButton->blockSignals( false );
+        }
+
+        // Päivitä Show2 all -napin tila
+        if ( m_showAllButton2 && hasCloud )
+        {
+            bool anyHidden2 = false;
+            for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+            {
+                if ( m_listWidget->topLevelItem( i )->checkState( 3 ) == Qt::Unchecked )
+                {
+                    anyHidden2 = true;
+                    break;
+                }
+            }
+            m_showAllButton2->blockSignals( true );
+            m_showAllButton2->setChecked( !anyHidden2 );
+            m_showAllButton2->setText( anyHidden2 ? "Show all 2" : "Hide all 2" );
+            m_showAllButton2->blockSignals( false );
         }
     }
 
@@ -1984,12 +2111,17 @@ namespace MaastoPlugin
         if ( !sf ) return;
 
         // Kerää valitut arvot Arvot-listasta (☑-rivit)
-        const QSet<float> selectedValues = getCheckedValues();
+        // Ikkunavalinta: View 2 (oletus, index 0) → Valitse2-sarake; View 1 → Valitse1-sarake
+        const bool useView2 = !m_classifyWindowCombo ||
+                              ( m_classifyWindowCombo->currentData().toInt() == 2 );
+        const QSet<float> selectedValues = useView2 ? getCheckedValues2() : getCheckedValues();
 
         if ( selectedValues.isEmpty() )
         {
             m_appInterface->dispToConsole(
-                "MaastoPlugin: valitse vähintään yksi arvo Arvot-listasta",
+                useView2
+                    ? "MaastoPlugin: valitse vähintään yksi arvo Valitse2-sarakkeesta"
+                    : "MaastoPlugin: valitse vähintään yksi arvo Valitse1-sarakkeesta",
                 ccMainAppInterface::WRN_CONSOLE_MESSAGE );
             return;
         }
@@ -2462,8 +2594,26 @@ namespace MaastoPlugin
             return;
         }
 
+        // Hae SF Show2-suodatusta varten
+        const QString sfName2 = m_valuesComboBox ? m_valuesComboBox->currentText() : QString();
+        const int sfIdx2 = sfName2.isEmpty() ? -1
+            : m_cloud->getScalarFieldIndexByName( sfName2.toStdString().c_str() );
+        CCCoreLib::ScalarField *sfForHidden2 =
+            ( sfIdx2 >= 0 && !m_hiddenValues2.isEmpty() )
+            ? m_cloud->getScalarField( sfIdx2 )
+            : nullptr;
+
         for ( unsigned idx : *srcIndices )
+        {
+            // Suodata Show2-piilotus: jätetään pois luokat joiden Show2 = Unchecked
+            if ( sfForHidden2 )
+            {
+                const float v = static_cast<float>( sfForHidden2->getValue( idx ) );
+                if ( m_hiddenValues2.contains( v ) )
+                    continue;
+            }
             m_selectionOnlyCloud->addPoint( *m_cloud->getPoint( idx ) );
+        }
 
         // 3. Kopioi visualisointi pääpilveltä
         if ( m_cloud->sfShown() )
@@ -2477,7 +2627,15 @@ namespace MaastoPlugin
                 ccScalarField *dstSf = new ccScalarField( srcSf->getName() );
                 dstSf->reserve( count );
                 for ( unsigned idx : *srcIndices )
+                {
+                    if ( sfForHidden2 )
+                    {
+                        const float v = static_cast<float>( sfForHidden2->getValue( idx ) );
+                        if ( m_hiddenValues2.contains( v ) )
+                            continue;
+                    }
                     dstSf->addElement( srcSf->getValue( idx ) );
+                }
                 dstSf->computeMinAndMax();
                 dstSf->setColorScale( srcSf->getColorScale() );
                 dstSf->setColorRampSteps( srcSf->getColorRampSteps() );
@@ -2493,7 +2651,15 @@ namespace MaastoPlugin
             if ( m_cloud->hasColors() && m_selectionOnlyCloud->reserveTheRGBTable() )
             {
                 for ( unsigned idx : *srcIndices )
+                {
+                    if ( sfForHidden2 )
+                    {
+                        const float v = static_cast<float>( sfForHidden2->getValue( idx ) );
+                        if ( m_hiddenValues2.contains( v ) )
+                            continue;
+                    }
                     m_selectionOnlyCloud->addColor( m_cloud->getPointColor( idx ) );
+                }
                 m_selectionOnlyCloud->showColors( true );
                 m_selectionOnlyCloud->showSF( false );
             }
@@ -2652,6 +2818,23 @@ namespace MaastoPlugin
         {
             const QTreeWidgetItem *item = m_listWidget->topLevelItem( i );
             if ( item->checkState( 0 ) == Qt::Checked )
+                values.insert( item->text( 0 ).toFloat() );
+        }
+        return values;
+    }
+
+    // ----------------------------------------------------------------
+    // getCheckedValues2  (col 2 — Valitse2, View 2)
+    // ----------------------------------------------------------------
+
+    QSet<float> MaastoDialog::getCheckedValues2() const
+    {
+        QSet<float> values;
+        for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+        {
+            const QTreeWidgetItem *item = m_listWidget->topLevelItem( i );
+            if ( m_listWidget->columnCount() >= 3 &&
+                 item->checkState( 2 ) == Qt::Checked )
                 values.insert( item->text( 0 ).toFloat() );
         }
         return values;
@@ -3393,6 +3576,56 @@ namespace MaastoPlugin
 
         // Päivitä View 2 jos auki
         refreshSelectionWindow();
+    }
+
+    // ----------------------------------------------------------------
+    // applyShowFilter2  (col 3 — Show2, View 2)
+    // Päivittää m_hiddenValues2:n ja rakentaa View 2:n pilven uudelleen.
+    // ----------------------------------------------------------------
+
+    void MaastoDialog::applyShowFilter2()
+    {
+        if ( m_cloud == nullptr )
+            return;
+
+        // Kerää piilotettavat arvot Show2-sarakkeesta (col 3)
+        m_hiddenValues2.clear();
+        bool allShown = true;
+        for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+        {
+            const QTreeWidgetItem *item = m_listWidget->topLevelItem( i );
+            if ( m_listWidget->columnCount() < 4 )
+                break;
+            if ( item->checkState( 3 ) == Qt::Unchecked )
+            {
+                m_hiddenValues2.insert( item->text( 0 ).toFloat() );
+                allShown = false;
+            }
+        }
+
+        // Tallenna Show2-tilat muistiin
+        for ( int i = 0; i < m_listWidget->topLevelItemCount(); ++i )
+        {
+            const QTreeWidgetItem *item = m_listWidget->topLevelItem( i );
+            if ( m_listWidget->columnCount() >= 4 )
+                m_showStates2[ item->text( 0 ) ] = ( item->checkState( 3 ) == Qt::Checked );
+        }
+
+        // Jos View 2 ei ole auki, ei tehdä muuta
+        if ( !m_selectionGLWindow || !m_selectionWindowIsOwned )
+            return;
+
+        // Rakenna View 2:n pilvi uudelleen (enableShowOnlyMode suodattaa m_hiddenValues2)
+        if ( m_lockedIndices.empty() )
+            return;
+
+        clearSelectionHighlights();
+        clearSelectionMeshes();
+        clearSelectionSizeSubClouds();
+        removeSelectionOnlyCloud();
+        if ( m_selectionGLWindow->getOwnDB() )
+            m_selectionGLWindow->getOwnDB()->removeAllChildren();
+        enableShowOnlyMode( /*resetCamera=*/false );
     }
 
     // ----------------------------------------------------------------

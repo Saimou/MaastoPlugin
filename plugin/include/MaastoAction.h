@@ -60,11 +60,13 @@ namespace MaastoPlugin
         void applyColorField( const QString &fieldName );
         void applyVisibilityFilter();
         void applyShowFilter();
+        void applyShowFilter2();
         void resetVisibility();
         void performClassification();
         void undoClassification();
 
         QSet<float> getCheckedValues() const;
+        QSet<float> getCheckedValues2() const;
         ccPointCloud* createFilteredHighlight( const QSet<float>& selectedValues );
         void buildHighlightFromIndices( const std::vector<unsigned>& indices );
         void removeHighlightObjects();
@@ -173,7 +175,10 @@ namespace MaastoPlugin
         QTreeWidget        *m_listWidget;
         QPushButton        *m_selectAllButton;
         QPushButton        *m_showAllButton;
+        QPushButton        *m_selectAllButton2 = nullptr;
+        QPushButton        *m_showAllButton2   = nullptr;
         QPushButton        *m_editClassesButton;
+        QComboBox          *m_classifyWindowCombo = nullptr;
 
         QComboBox          *m_targetClassComboBox;
         QComboBox          *m_colorComboBox;
@@ -184,14 +189,18 @@ namespace MaastoPlugin
         bool                m_updatingCloud;
         bool                m_updatingVisibility;
         bool                m_updatingShow;
+        bool                m_updatingShow2    = false;
         bool                m_ptcColorsApplied;
         bool                m_hadColorsBeforePtc;  // oliko RGB-taulukko olemassa ennen ptc-väritystä
         QVector<ccColor::Rgb> m_savedColors;        // alkuperäiset vertex-RGB-värit
 
-        QMap<QString, bool> m_showStates;   // arvo → Show-tila (true=näkyvä)
+        QMap<QString, bool> m_showStates;    // arvo → Show1-tila (true=näkyvä, View 1)
+        QMap<QString, bool> m_showStates2;   // arvo → Show2-tila (true=näkyvä, View 2)
+        QSet<float>         m_hiddenValues2; // Show2-piilotus: nämä luokat piilotetaan View 2:sta
 
         // Pysyvät valinnat: säilyvät listan uudelleentäytön yli
-        QSet<int>           m_checkedClassCodes;  // Luokittele luokista -lista
+        QSet<int>           m_checkedClassCodes;   // Luokittele luokista -lista (View 1)
+        QSet<int>           m_checkedClassCodes2;  // Luokittele luokista -lista (View 2)
         int                 m_lastTargetCode;     // Luokittele luokkaan -combo (luokkakoodi, -1 = ei asetettu)
 
         // Highlight-asetukset
