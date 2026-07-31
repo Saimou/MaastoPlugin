@@ -29,7 +29,7 @@ jobs:
         working-directory: CloudCompare
         run: |
           git submodule init
-          git submodule deinit plugins/core/Standard/qColorimetricSegmenter
+          git config submodule.plugins/core/Standard/qColorimetricSegmenter.update none
           git submodule update --recursive --depth=1
 
       - name: Install dependencies
@@ -102,7 +102,7 @@ jobs:
         shell: bash
         run: |
           git submodule init
-          git submodule deinit plugins/core/Standard/qColorimetricSegmenter
+          git config submodule.plugins/core/Standard/qColorimetricSegmenter.update none
           git submodule update --recursive --depth=1
 
       - name: Install Qt 5.15.2 (msvc2019_64)
@@ -228,7 +228,7 @@ jobs:
         shell: bash
         run: |
           git submodule init
-          git submodule deinit plugins/core/Standard/qColorimetricSegmenter
+          git config submodule.plugins/core/Standard/qColorimetricSegmenter.update none
           git submodule update --recursive --depth=1
 
       - name: Install Qt 6.8.3 (msvc2022_64) Qt:n omalta serveriltä
