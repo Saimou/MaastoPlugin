@@ -30,7 +30,8 @@ jobs:
         run: |
           git submodule init
           git config submodule.plugins/core/Standard/qColorimetricSegmenter.update none
-          git submodule update --recursive --depth=1
+          git submodule update --depth=1
+          git submodule update --init --recursive --depth=1 libs/qCC_db/extern/CCCoreLib
 
       - name: Install dependencies
         run: |
@@ -103,7 +104,8 @@ jobs:
         run: |
           git submodule init
           git config submodule.plugins/core/Standard/qColorimetricSegmenter.update none
-          git submodule update --recursive --depth=1
+          git submodule update --depth=1
+          git submodule update --init --recursive --depth=1 libs/qCC_db/extern/CCCoreLib
 
       - name: Install Qt 5.15.2 (msvc2019_64)
         uses: jurplel/install-qt-action@v3
@@ -229,7 +231,8 @@ jobs:
         run: |
           git submodule init
           git config submodule.plugins/core/Standard/qColorimetricSegmenter.update none
-          git submodule update --recursive --depth=1
+          git submodule update --depth=1
+          git submodule update --init --recursive --depth=1 libs/qCC_db/extern/CCCoreLib
 
       - name: Install Qt 6.8.3 (msvc2022_64) Qt:n omalta serveriltä
         uses: jurplel/install-qt-action@v4
